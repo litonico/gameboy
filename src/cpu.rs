@@ -3,6 +3,9 @@
 // In for the Kill - Billie Marten
 // Sam Brooks
 // Jose Gonzales - Stay in the Shade
+// Lo-Fang
+
+use mmu;
 
 struct RegisterSet {
     // 8-bit registers
@@ -37,7 +40,6 @@ struct Clock {
 struct Z80 {
     _clock: Clock,
     _r: RegisterSet,
-    _mmu: ::mmu::MMU,
 }
 
 impl Z80 {
@@ -133,4 +135,12 @@ fn main() {
             m: 0, t: 0
         },
     };
+
+    /*
+    loop {
+        let op = cpu._mmu.rb(Z80._r.pc);
+        cpu._map[op]()
+        cpu._r.pc += 1;
+    }
+    */
 }

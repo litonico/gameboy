@@ -4,4 +4,4 @@ version = "0.0.1"
 authors = [ "Lito Nicolai <lito.nicolai@gmail.com>"]
 
 [[bin]]
-name = "cpu"
+name = "gb"
