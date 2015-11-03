@@ -1,7 +1,10 @@
 [package]
-name = "GBEmulator"
+name = "gb"
 version = "0.0.1"
 authors = [ "Lito Nicolai <lito.nicolai@gmail.com>"]
 
-[[bin]]
+[lib]
 name = "gb"
+
+[dependencies]
+stainless = "0.1.0"

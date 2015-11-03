@@ -1,11 +1,10 @@
 // Wolves and the Ravens - Rogue Valley
-// Holding - Grouper 
+// Holding - Grouper
 // In for the Kill - Billie Marten
 // Sam Brooks
 // Jose Gonzales - Stay in the Shade
 // Lo-Fang
 // Dan Grossman UW CS341
-
 
 const ZERO      : u8 = 0x80;
 const SUBTRACT  : u8 = 0x40;
@@ -21,7 +20,7 @@ struct RegisterSet {
     e: u8,
     h: u8,
     l: u8,
-    // `Flags` register 
+    // `Flags` register
     // The z80 uses one-byte numbers, so
     // subtracting two 2-byte numbers requires an 8-bit (half) carry
     // as well as a full carry.
@@ -33,147 +32,431 @@ struct RegisterSet {
     // 16-bit registers
     pc: u16, // `Program Counter`: keeps track of where the cpu is executing
     sp: u16, // `Stack Pointer`: used with PUSH and POP to keep a stack
+}
 
-    // replace with type clock?
-    m: u8,
-    t: u8,
+impl RegisterSet {
+    pub fn new() -> RegisterSet {
+        RegisterSet {
+            a: 0, f: 0, b: 0, c: 0, d:0, e: 0, h: 0, l: 0,
+            pc: 0, sp: 0
+        }
+    }
 }
 
 struct Clock {
-    m: u8,
-    t: u8,
+    m: u32,
+    t: u32,
 }
 
-struct Z80 {
-    _clock: Clock,
-    _r: RegisterSet,
-    MMU: ::mmu::MMU,
-    ALU: ::alu::ALU,
-}
-
-macro_rules! _load(
-    ($cpu:ident, $reg1:ident, $reg2:ident) => ({
-        $cpu._r.$reg1 = $cpu._r.$reg2;
-        $cpu._clock.m += 1;
-        $cpu._clock.t += 4;
-    })
-);
-
-// Load the mmu instruction of the current program counter into $reg 
-macro_rules! _load_n( 
-    ($cpu:ident, $reg:ident) => ({
-        $cpu._r.$reg = $cpu.MMU.rb($cpu._r.pc)
-        $cpu._r.pc += 1;
-
-        $cpu._clock.m += 2;
-        $cpu._clock.t += 8;
-    })
-);
-
-macro_rules! _load_nn( // Load 
-    ($cpu:ident, $reg1:ident, $reg2:ident) => ({
-        $cpu._r.$reg1 = $cpu.MMU.rb($cpu._r.pc)
-        $cpu._r.pc += 1;
-        $cpu._r.$reg2 = $cpu.MMU.rb($cpu._r.pc)
-        $cpu._r.pc += 1;
-
-
-        $cpu._clock.m += 3;
-        $cpu._clock.t += 12;
-    })
-);
-
-impl Z80 {
-
-    fn NOP(&mut self) {
-        self._clock.m += 1;
-        self._clock.t += 4;
+impl Clock {
+    fn new() -> Clock {
+        Clock { m:0, t:0 }
     }
 
-    /* Triggers a compiler bug
-    macro_rules! (
-        push($cpu:ident, $reg1:ident, $reg2:ident) => ({
-            $cpu._r.sp -= 1;
-            $cpu.MMU.wb($cpu._r.sp, $cpu._r.$reg1);
-            $cpu._r.sp -= 1;
-            $cpu.MMU.wb($cpu._r.sp, $cpu._r.$reg2);
-        })
+    fn tick(&mut self, t:u8) {
+        self.m += t as u32;
+        self.t += t as u32 * 4;
+    }
+}
+
+pub struct Z80 {
+    clock: Clock,
+    regs: RegisterSet,
+    mmu: ::mmu::MMU,
+}
+
+/// CPU Macro Definitions
+///
+/// LD   r,r         xx         4 ---- r=r
+/// Load a register r1 with another register r2.
+macro_rules! LDrr {
+     ($cpu:ident, $r1:ident, $r2:ident) => (
+         {
+             $cpu.regs.$r1 = $cpu.regs.$r2;
+             $cpu.clock.tick(1);
+         }
+     )
+ }
+
+/// LD   r,n         xx nn      8 ---- r=n
+/// Load a register r with a number nn, which is read from where
+/// the program counter is right now.
+
+macro_rules! LDrn {
+    ($cpu:ident, $r:ident) => (
+        {
+            $cpu.regs.$r = $cpu.mmu.read($cpu.regs.pc);
+            $cpu.regs.pc += 1;
+            $cpu.clock.tick(2);
+        }
     )
-    */
+}
+
+impl Z80 {
+    pub fn new() -> Z80 {
+        Z80 {
+            clock: Clock::new(),
+            regs: RegisterSet::new(),
+            mmu: ::mmu::MMU::new(),
+        }
+    }
+
+    // Utilities
+    fn hl(&mut self) -> u8 {
+        let ref reg = self.regs;
+        let h = reg.h as u16;
+        let l = reg.l as u16;
+        self.mmu.read(h<<8 | l)
+    }
+
+    fn flag_is_set(&mut self, flag: u8) -> bool {
+        self.regs.f & flag == flag
+    }
+
+    fn clear_flags(&mut self) {
+        self.regs.f = 0x0;;
+    }
+
+    fn set_flag(&mut self, flag: u8) {
+        self.regs.f = self.regs.f | flag;
+    }
+
+    fn unset_flag(&mut self, flag: u8) {
+        let inverse_flag : u8 = !flag;
+        self.regs.f = self.regs.f & inverse_flag;
+    }
+
+    // Arithmatic Utilities
+    fn add8(&mut self, a:u8, b:u8) -> u8 {
+        // Cheat by holding result in a u16
+        let overflowing_sum : u16 = a as u16 + b as u16;
+        // Set the appropriate flags
+        self.clear_flags();
+        if (overflowing_sum == 0) { self.set_flag(ZERO) }
+        if (overflowing_sum > 0xFF) { self.set_flag(CARRY) }
+        // Mask result to 8 bits
+        let sum = overflowing_sum as u8;
+        sum
+    }
+
+    fn add16(&mut self, a:u16, b:u16) -> u16 {
+        let overflowing_sum : u32 = a as u32 + b as u32;
+        // Set the appropriate flags
+        self.clear_flags();
+        if (overflowing_sum == 0) { self.set_flag(ZERO) }
+        if (overflowing_sum > 0xFFFF) { self.set_flag(CARRY) }
+        // Mask result to 8 bits
+        let sum = overflowing_sum as u16;
+        sum
+    }
+
+    // Z-80 CPU Instruction Set
+    // ---- --- ----------- ---
+
+    fn ADCHLss(&mut self) { // Add with carry register pair ss to HL.
+        let A = self.regs.a;
+        let HL = self.hl();
+        self.regs.a = self.add8(A, HL);
+        self.clock.tick(1);
+    }
+
+    fn CCF(&mut self) { // Complement carry flag.
+        if (self.flag_is_set(CARRY)){
+            self.unset_flag(CARRY);
+        } else {
+            self.set_flag(CARRY);
+        }
+        self.clock.tick(1)
+    }
+
+    /// 8-bit Load Commands
+    /// ----- ---- --------
+
+    /// LD   r,r         xx         4 ---- r=r
+    /// Load a register r1 with another register r2.
+    /// See the macro definition LDrr above.
+    /// This works for registers a, b, c, d, e, h, and l!
+
+    //TODO(Lito): there's GOTTA be a way to metaprogram most of this away.
+
+    // a
+    fn LDrr_aa(&mut self) { LDrr!(self,a,a); }
+    fn LDrr_ab(&mut self) { LDrr!(self,a,b); }
+    fn LDrr_ac(&mut self) { LDrr!(self,a,c); }
+    fn LDrr_ad(&mut self) { LDrr!(self,a,d); }
+    fn LDrr_ae(&mut self) { LDrr!(self,a,e); }
+    fn LDrr_ah(&mut self) { LDrr!(self,a,h); }
+    fn LDrr_al(&mut self) { LDrr!(self,a,l); }
+
+    // b
+    fn LDrr_ba(&mut self) { LDrr!(self,b,a); }
+    fn LDrr_bb(&mut self) { LDrr!(self,b,b); }
+    fn LDrr_bc(&mut self) { LDrr!(self,b,c); }
+    fn LDrr_bd(&mut self) { LDrr!(self,b,d); }
+    fn LDrr_be(&mut self) { LDrr!(self,b,e); }
+    fn LDrr_bh(&mut self) { LDrr!(self,b,h); }
+    fn LDrr_bl(&mut self) { LDrr!(self,b,l); }
+
+    // c
+    fn LDrr_ca(&mut self) { LDrr!(self,c,a); }
+    fn LDrr_cb(&mut self) { LDrr!(self,c,b); }
+    fn LDrr_cc(&mut self) { LDrr!(self,c,c); }
+    fn LDrr_cd(&mut self) { LDrr!(self,c,d); }
+    fn LDrr_ce(&mut self) { LDrr!(self,c,e); }
+    fn LDrr_ch(&mut self) { LDrr!(self,c,h); }
+    fn LDrr_cl(&mut self) { LDrr!(self,c,l); }
+
+    // d
+    fn LDrr_da(&mut self) { LDrr!(self,d,a); }
+    fn LDrr_db(&mut self) { LDrr!(self,d,b); }
+    fn LDrr_dc(&mut self) { LDrr!(self,d,c); }
+    fn LDrr_dd(&mut self) { LDrr!(self,d,d); }
+    fn LDrr_de(&mut self) { LDrr!(self,d,e); }
+    fn LDrr_dh(&mut self) { LDrr!(self,d,h); }
+    fn LDrr_dl(&mut self) { LDrr!(self,d,l); }
+
+    // e
+    fn LDrr_ea(&mut self) { LDrr!(self,e,a); }
+    fn LDrr_eb(&mut self) { LDrr!(self,e,b); }
+    fn LDrr_ec(&mut self) { LDrr!(self,e,c); }
+    fn LDrr_ed(&mut self) { LDrr!(self,e,d); }
+    fn LDrr_ee(&mut self) { LDrr!(self,e,e); }
+    fn LDrr_eh(&mut self) { LDrr!(self,e,h); }
+    fn LDrr_el(&mut self) { LDrr!(self,e,l); }
+
+    // h
+    fn LDrr_ha(&mut self) { LDrr!(self,h,a); }
+    fn LDrr_hb(&mut self) { LDrr!(self,h,b); }
+    fn LDrr_hc(&mut self) { LDrr!(self,h,c); }
+    fn LDrr_hd(&mut self) { LDrr!(self,h,d); }
+    fn LDrr_he(&mut self) { LDrr!(self,h,e); }
+    fn LDrr_hh(&mut self) { LDrr!(self,h,h); }
+    fn LDrr_hl(&mut self) { LDrr!(self,h,l); }
+
+    // l
+    fn LDrr_la(&mut self) { LDrr!(self,l,a); }
+    fn LDrr_lb(&mut self) { LDrr!(self,l,b); }
+    fn LDrr_lc(&mut self) { LDrr!(self,l,c); }
+    fn LDrr_ld(&mut self) { LDrr!(self,l,d); }
+    fn LDrr_le(&mut self) { LDrr!(self,l,e); }
+    fn LDrr_lh(&mut self) { LDrr!(self,l,h); }
+    fn LDrr_ll(&mut self) { LDrr!(self,l,l); }
+
+/// LD   r,n         xx nn      8 ---- r=n
+/// Load a register r with a number nn, which is read from where
+/// the program counter is right now.
+/// This works for registers a, b, c, d, e, h, and l!
+
+    // l
+    fn LDrn_a(&mut self) { LDrn!(self,a); }
+    fn LDrn_b(&mut self) { LDrn!(self,b); }
+    fn LDrn_c(&mut self) { LDrn!(self,c); }
+    fn LDrn_d(&mut self) { LDrn!(self,d); }
+    fn LDrn_e(&mut self) { LDrn!(self,e); }
+    fn LDrn_h(&mut self) { LDrn!(self,h); }
+    fn LDrn_l(&mut self) { LDrn!(self,l); }
+
+/// LD   r,(HL)      xx         8 ---- r=(HL)
+/// Load a register r with the contents of the HL registers
+
+/*
+# 8-bit Load Commands
+# ----- ---- --------
+LD   r,(HL)      xx         8 ---- r=(HL)
+LD   (HL),r      7x         8 ---- (HL)=r
+LD   (HL),n      36 nn     12 ----
+LD   A,(BC)      0A         8 ----
+LD   A,(DE)      1A         8 ----
+LD   A,(nn)      FA        16 ----
+LD   (BC),A      02         8 ----
+LD   (DE),A      12         8 ----
+LD   (nn),A      EA        16 ----
+LD   A,(FF00+n)  F0 nn     12 ---- read from io-port n (memory FF00+n)
+LD   (FF00+n),A  E0 nn     12 ---- write to io-port n (memory FF00+n)
+LD   A,(FF00+C)  F2         8 ---- read from io-port C (memory FF00+C)
+LD   (FF00+C),A  E2         8 ---- write to io-port C (memory FF00+C)
+LDI  (HL),A      22         8 ---- (HL)=A, HL=HL+1
+LDI  A,(HL)      2A         8 ---- A=(HL), HL=HL+1
+LDD  (HL),A      32         8 ---- (HL)=A, HL=HL-1
+LDD  A,(HL)      3A         8 ---- A=(HL), HL=HL-1
+
+# 16-bit Load Commands
+# ------ ---- --------
+LD   rr,nn       x1 nn nn  12 ---- rr=nn (rr may be BC,DE,HL or SP)
+LD   SP,HL       F9         8 ---- SP=HL
+PUSH rr          x5        16 ---- SP=SP-2  (SP)=rr   (rr may be BC,DE,HL,AF)
+POP  rr          x1        12 (AF) rr=(SP)  SP=SP+2   (rr may be BC,DE,HL,AF)
+
+# 8-bit Arithmetic Commands
+# ----- ---------- --------
+ADD  A,r         8x         4 z0hc A=A+r
+ADD  A,n         C6 nn      8 z0hc A=A+n
+ADD  A,(HL)      86         8 z0hc A=A+(HL)
+ADC  A,r         8x         4 z0hc A=A+r+cy
+ADC  A,n         CE nn      8 z0hc A=A+n+cy
+ADC  A,(HL)      8E         8 z0hc A=A+(HL)+cy
+SUB  r           9x         4 z1hc A=A-r
+SUB  n           D6 nn      8 z1hc A=A-n
+SUB  (HL)        96         8 z1hc A=A-(HL)
+SBC  A,r         9x         4 z1hc A=A-r-cy
+SBC  A,n         DE nn      8 z1hc A=A-n-cy
+SBC  A,(HL)      9E         8 z1hc A=A-(HL)-cy
+AND  r           Ax         4 z010 A=A & r
+AND  n           E6 nn      8 z010 A=A & n
+AND  (HL)        A6         8 z010 A=A & (HL)
+XOR  r           Ax         4 z000
+XOR  n           EE nn      8 z000
+XOR  (HL)        AE         8 z000
+OR   r           Bx         4 z000 A=A | r
+OR   n           F6 nn      8 z000 A=A | n
+OR   (HL)        B6         8 z000 A=A | (HL)
+CP   r           Bx         4 z1hc compare A-r
+CP   n           FE nn      8 z1hc compare A-n
+CP   (HL)        BE         8 z1hc compare A-(HL)
+INC  r           xx         4 z0h- r=r+1
+INC  (HL)        34        12 z0h- (HL)=(HL)+1
+DEC  r           xx         4 z1h- r=r-1
+DEC  (HL)        35        12 z1h- (HL)=(HL)-1
+DAA              27         4 z-0x decimal adjust akku
+CPL              2F         4 -11- A = A xor FF
+
+# 16-bit Arithmetic Commands
+# ------ ---------- --------
+ADD  HL,rr     x9           8 -0hc HL = HL+rr     ;rr may be BC,DE,HL,SP
+INC  rr        x3           8 ---- rr = rr+1      ;rr may be BC,DE,HL,SP
+DEC  rr        xB           8 ---- rr = rr-1      ;rr may be BC,DE,HL,SP
+ADD  SP,dd     E8          16 00hc SP = SP +/- dd ;dd is 8bit signed number
+LD   HL,SP+dd  F8          12 00hc HL = SP +/- dd ;dd is 8bit signed number
+
+# Rotate and Shift Commands
+# ------ --- ----- --------
+RLCA           07           4 000c rotate akku left
+RLA            17           4 000c rotate akku left through carry
+RRCA           0F           4 000c rotate akku right
+RRA            1F           4 000c rotate akku right through carry
+RLC  r         CB 0x        8 z00c rotate left
+RLC  (HL)      CB 06       16 z00c rotate left
+RL   r         CB 1x        8 z00c rotate left through carry
+RL   (HL)      CB 16       16 z00c rotate left through carry
+RRC  r         CB 0x        8 z00c rotate right
+RRC  (HL)      CB 0E       16 z00c rotate right
+RR   r         CB 1x        8 z00c rotate right through carry
+RR   (HL)      CB 1E       16 z00c rotate right through carry
+SLA  r         CB 2x        8 z00c shift left arithmetic (b0=0)
+SLA  (HL)      CB 26       16 z00c shift left arithmetic (b0=0)
+SWAP r         CB 3x        8 z000 exchange low/hi-nibble
+SWAP (HL)      CB 36       16 z000 exchange low/hi-nibble
+SRA  r         CB 2x        8 z00c shift right arithmetic (b7=b7)
+SRA  (HL)      CB 2E       16 z00c shift right arithmetic (b7=b7)
+SRL  r         CB 3x        8 z00c shift right logical (b7=0)
+SRL  (HL)      CB 3E       16 z00c shift right logical (b7=0)
+
+# Single Bit Operation Commands
+# ------ --- --------- --------
+BIT  n,r       CB xx        8 z01- test bit n
+BIT  n,(HL)    CB xx       12 z01- test bit n
+SET  n,r       CB xx        8 ---- set bit n
+SET  n,(HL)    CB xx       16 ---- set bit n
+RES  n,r       CB xx        8 ---- reset bit n
+RES  n,(HL)    CB xx       16 ---- reset bit n
+
+
+# CPU Control Commands
+# --- ------- --------
+CCF            3F           4 -00c cy=cy xor 1
+SCF            37           4 -001 cy=1
+NOP            00           4 ---- no operation
+HALT           76         N*4 ---- halt until interrupt occurs (low power)
+STOP           10 00        ? ---- low power standby mode (VERY low power)
+DI             F3           4 ---- disable interrupts, IME=0
+EI             FB           4 ---- enable interrupts, IME=1
+
+# Jump Commands
+# ---- --------
+JP   nn        C3 nn nn    16 ---- jump to nn, PC=nn
+JP   HL        E9           4 ---- jump to HL, PC=HL
+JP   f,nn      xx nn nn 16;12 ---- conditional jump if nz,z,nc,c
+JR   PC+dd     18 dd       12 ---- relative jump to nn (PC=PC+/-7bit)
+JR   f,PC+dd   xx dd     12;8 ---- conditional relative jump if nz,z,nc,c
+CALL nn        CD nn nn    24 ---- call to nn, SP=SP-2, (SP)=PC, PC=nn
+CALL f,nn      xx nn nn 24;12 ---- conditional call if nz,z,nc,c
+RET            C9          16 ---- return, PC=(SP), SP=SP+2
+RET  f         xx        20;8 ---- conditional return if nz,z,nc,c
+RETI           D9          16 ---- return and enable interrupts (IME=1)
+RST  n         xx          16 ---- call to 00,08,10,18,20,28,30,38
+ */
+    fn NOP(&mut self) {
+        self.clock.m += 1;
+        self.clock.t += 4;
+    }
 
     fn PUSHBC(&mut self) { // Push B and C to the stack
-        self._r.sp -= 1;
-        self.MMU.wb(self._r.sp, self._r.b);
-        self._r.sp -= 1;
-        self.MMU.wb(self._r.sp, self._r.c);
+        self.regs.sp -= 1;
+        self.mmu.wb(self.regs.sp, self.regs.b);
+        self.regs.sp -= 1;
+        self.mmu.wb(self.regs.sp, self.regs.c);
 
-        self._r.m = 3; 
-        self._r.t = 12;
+        self.clock.tick(3);
     }
 
 
     fn reset(&mut self) {
-        self._r.a = 0; self._r.b = 0; self._r.c = 0; self._r.d = 0; 
-        self._r.e = 0; self._r.h = 0; self._r.l = 0; self._r.f = 0; 
-        self._r.sp = 0; 
-        self._r.pc = 0; 
+        self.regs.a = 0; self.regs.b = 0; self.regs.c = 0; self.regs.d = 0;
+        self.regs.e = 0; self.regs.h = 0; self.regs.l = 0; self.regs.f = 0;
+        self.regs.sp = 0;
+        self.regs.pc = 0;
 
-        self._clock.m = 0; 
-        self._clock.t = 0; 
+        self.clock.m = 0;
+        self.clock.t = 0;
     }
 
 
-    fn ADDr_e(&mut self) { // TODO: _r.a may need to be longer than u8
-        self._r.a += self._r.e;
-        self._r.f = 0;
+    fn ADDr_e(&mut self) { // TODO: regs.a may need to be longer than u8
+        self.regs.a += self.regs.e;
+        self.regs.f = 0;
         // x & 255 is used to strip a number longer than 8 bits to that length
-        if !(self._r.a & 255 == 0) {
+        if !(self.regs.a & 255 == 0) {
             // combine 0x80 with any other flags by way of the |= operator
-            self._r.f |= 0x80;
+            self.regs.f |= 0x80;
         }
-        if self._r.a > 255 {
-            self._r.f |= 0x10;
+        if self.regs.a > 255 {
+            self.regs.f |= 0x10;
         }
 
-        self._r.a &= 255;
- 
-        self._r.m = 1; 
-        self._r.t = 4;
+        self.regs.a &= 255;
+
+        self.clock.tick(1);
     }
-
     fn CPr_e(&mut self) {
-        let mut i = self._r.a; // Store A
-        i -= self._r.b;
-        self._r.f |= 0x40;
+        let mut i = self.regs.a; // Store A
+        i -= self.regs.b;
+        self.regs.f |= 0x40;
         if !(i & 255 == 0) {
-            self._r.f |= 0x80;
+            self.regs.f |= 0x80;
         }
         if i < 0 {
-            self._r.m |= 0x10;
+            self.regs.f |= 0x10;
         }
 
-        self._r.m = 1; 
-        self._r.t = 4;
+        self.clock.tick(1);
     }
 
 
     fn POPHL(&mut self) {
-        self._r.l = self.MMU.rb(self._r.sp); // read from stack pointer address
-        self._r.sp += 1;
-        self._r.h = self.MMU.rb(self._r.sp);
-        self._r.sp += 1;
+        self.regs.l = self.mmu.read(self.regs.sp); // read from stack pointer address
+        self.regs.sp += 1;
+        self.regs.h = self.mmu.read(self.regs.sp);
+        self.regs.sp += 1;
 
-        self._r.m = 3;
-        self._r.t = 12;
+        self.clock.tick(3);
     }
 
     fn LDAmm(&mut self) { // Read from location into A
-        let addr = self.MMU.rw(self._r.pc);
-        self._r.pc += 2; // It's a full 16 bits, so advance twice
-        self._r.a = self.MMU.rb(addr);
+        let addr = self.mmu.rw(self.regs.pc);
+        self.regs.pc += 2; // It's a full 16 bits, so advance twice
+        self.regs.a = self.mmu.read(addr);
 
-        self._r.m = 4;
-        self._r.t = 16;
+        self.clock.tick(4);
     }
 
     fn call(&mut self, opcode: u8) {
@@ -455,4 +738,89 @@ impl Z80 {
     }
 }
 
+#[test]
+fn test_the_clock_moves_forward_in_time() {
+    let mut cpu = Z80::new();
+    cpu.clock.tick(1);
+    assert_eq!(cpu.clock.m, 1);
+    assert_eq!(cpu.clock.t, 4);
+    cpu.clock.tick(4);
+    assert_eq!(cpu.clock.m, 1+4);
+    assert_eq!(cpu.clock.t, 4+16);
+}
 
+#[test]
+fn test_setting_CPU_flags() {
+    let mut cpu = Z80::new();
+    cpu.set_flag(CARRY);
+    assert!(cpu.flag_is_set(CARRY));
+    cpu.set_flag(ZERO);
+    assert!(cpu.flag_is_set(ZERO));
+}
+
+#[test]
+fn test_the_alu_adds_8_bit_numbers() {
+    let mut cpu = Z80::new();
+    let added = cpu.add8(200, 100);
+    assert_eq!(added, 44);
+    assert!(cpu.flag_is_set(CARRY));
+}
+
+#[test]
+fn test_the_alu_adds_16_bit_numbers() {
+    let mut cpu = Z80::new();
+    let added = cpu.add16(65535, 50);
+    assert_eq!(added, 49);
+    assert!(cpu.flag_is_set(CARRY));
+}
+
+#[test]
+fn test_setting_flags() {
+    let mut cpu = Z80::new();
+    assert!(!cpu.flag_is_set(CARRY));
+    cpu.set_flag(CARRY);
+    assert!(cpu.flag_is_set(CARRY));
+}
+
+#[test]
+fn test_unsetting_flags() {
+    let mut cpu = Z80::new();
+    cpu.set_flag(CARRY);
+    cpu.unset_flag(CARRY);
+    assert!(!cpu.flag_is_set(CARRY));
+}
+
+#[test]
+fn test_the_instruction_set_can_LDrr() {
+    let mut cpu = Z80::new();
+    // Because a macro is used to generate this code,
+    // we hope we can get away with just testing one case.
+    // This is dangerous, because it won't catch if we've forgotten
+    // to generate a case!
+    cpu.regs.b = 0x01;
+    cpu.LDrr_ab();
+    assert_eq!(cpu.regs.a, 0x01)
+}
+
+#[test]
+fn test_the_instruction_set_can_LDrn() {
+    let mut cpu = Z80::new();
+    // Because a macro is used to generate this code,
+    // we hope we can get away with just testing one case.
+    // This is dangerous, because it won't catch if we've forgotten
+    // to generate a case!
+    cpu.regs.a = 0x05;
+    cpu.regs.pc = 0xC000;
+    cpu.LDrn_a();
+    // MMU is filled with zeros, so expect regs.a to be zeros now, too
+    assert_eq!(cpu.regs.a, 0x00)
+}
+
+#[test]
+fn test_the_instruction_set_can_CCF() {
+    let mut cpu = Z80::new();
+    cpu.CCF();
+    assert!(cpu.flag_is_set(CARRY));
+    cpu.CCF();
+    assert!(!cpu.flag_is_set(CARRY));
+}

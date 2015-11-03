@@ -1,0 +1,126 @@
+# 8-bit Load Commands
+# ----- ---- --------
+LD   r,r         xx         4 ---- r=r
+LD   r,n         xx nn      8 ---- r=n
+LD   r,(HL)      xx         8 ---- r=(HL)
+LD   (HL),r      7x         8 ---- (HL)=r
+LD   (HL),n      36 nn     12 ----
+LD   A,(BC)      0A         8 ----
+LD   A,(DE)      1A         8 ----
+LD   A,(nn)      FA        16 ----
+LD   (BC),A      02         8 ----
+LD   (DE),A      12         8 ----
+LD   (nn),A      EA        16 ----
+LD   A,(FF00+n)  F0 nn     12 ---- read from io-port n (memory FF00+n)
+LD   (FF00+n),A  E0 nn     12 ---- write to io-port n (memory FF00+n)
+LD   A,(FF00+C)  F2         8 ---- read from io-port C (memory FF00+C)
+LD   (FF00+C),A  E2         8 ---- write to io-port C (memory FF00+C)
+LDI  (HL),A      22         8 ---- (HL)=A, HL=HL+1
+LDI  A,(HL)      2A         8 ---- A=(HL), HL=HL+1
+LDD  (HL),A      32         8 ---- (HL)=A, HL=HL-1
+LDD  A,(HL)      3A         8 ---- A=(HL), HL=HL-1
+
+# 16-bit Load Commands
+# ------ ---- --------
+LD   rr,nn       x1 nn nn  12 ---- rr=nn (rr may be BC,DE,HL or SP)
+LD   SP,HL       F9         8 ---- SP=HL
+PUSH rr          x5        16 ---- SP=SP-2  (SP)=rr   (rr may be BC,DE,HL,AF)
+POP  rr          x1        12 (AF) rr=(SP)  SP=SP+2   (rr may be BC,DE,HL,AF)
+
+# 8-bit Arithmetic Commands
+# ----- ---------- --------
+ADD  A,r         8x         4 z0hc A=A+r
+ADD  A,n         C6 nn      8 z0hc A=A+n
+ADD  A,(HL)      86         8 z0hc A=A+(HL)
+ADC  A,r         8x         4 z0hc A=A+r+cy
+ADC  A,n         CE nn      8 z0hc A=A+n+cy
+ADC  A,(HL)      8E         8 z0hc A=A+(HL)+cy
+SUB  r           9x         4 z1hc A=A-r
+SUB  n           D6 nn      8 z1hc A=A-n
+SUB  (HL)        96         8 z1hc A=A-(HL)
+SBC  A,r         9x         4 z1hc A=A-r-cy
+SBC  A,n         DE nn      8 z1hc A=A-n-cy
+SBC  A,(HL)      9E         8 z1hc A=A-(HL)-cy
+AND  r           Ax         4 z010 A=A & r
+AND  n           E6 nn      8 z010 A=A & n
+AND  (HL)        A6         8 z010 A=A & (HL)
+XOR  r           Ax         4 z000
+XOR  n           EE nn      8 z000
+XOR  (HL)        AE         8 z000
+OR   r           Bx         4 z000 A=A | r
+OR   n           F6 nn      8 z000 A=A | n
+OR   (HL)        B6         8 z000 A=A | (HL)
+CP   r           Bx         4 z1hc compare A-r
+CP   n           FE nn      8 z1hc compare A-n
+CP   (HL)        BE         8 z1hc compare A-(HL)
+INC  r           xx         4 z0h- r=r+1
+INC  (HL)        34        12 z0h- (HL)=(HL)+1
+DEC  r           xx         4 z1h- r=r-1
+DEC  (HL)        35        12 z1h- (HL)=(HL)-1
+DAA              27         4 z-0x decimal adjust akku
+CPL              2F         4 -11- A = A xor FF
+
+# 16-bit Arithmetic Commands
+# ------ ---------- --------
+ADD  HL,rr     x9           8 -0hc HL = HL+rr     ;rr may be BC,DE,HL,SP
+INC  rr        x3           8 ---- rr = rr+1      ;rr may be BC,DE,HL,SP
+DEC  rr        xB           8 ---- rr = rr-1      ;rr may be BC,DE,HL,SP
+ADD  SP,dd     E8          16 00hc SP = SP +/- dd ;dd is 8bit signed number
+LD   HL,SP+dd  F8          12 00hc HL = SP +/- dd ;dd is 8bit signed number
+
+# Rotate and Shift Commands
+# ------ --- ----- --------
+RLCA           07           4 000c rotate akku left
+RLA            17           4 000c rotate akku left through carry
+RRCA           0F           4 000c rotate akku right
+RRA            1F           4 000c rotate akku right through carry
+RLC  r         CB 0x        8 z00c rotate left
+RLC  (HL)      CB 06       16 z00c rotate left
+RL   r         CB 1x        8 z00c rotate left through carry
+RL   (HL)      CB 16       16 z00c rotate left through carry
+RRC  r         CB 0x        8 z00c rotate right
+RRC  (HL)      CB 0E       16 z00c rotate right
+RR   r         CB 1x        8 z00c rotate right through carry
+RR   (HL)      CB 1E       16 z00c rotate right through carry
+SLA  r         CB 2x        8 z00c shift left arithmetic (b0=0)
+SLA  (HL)      CB 26       16 z00c shift left arithmetic (b0=0)
+SWAP r         CB 3x        8 z000 exchange low/hi-nibble
+SWAP (HL)      CB 36       16 z000 exchange low/hi-nibble
+SRA  r         CB 2x        8 z00c shift right arithmetic (b7=b7)
+SRA  (HL)      CB 2E       16 z00c shift right arithmetic (b7=b7)
+SRL  r         CB 3x        8 z00c shift right logical (b7=0)
+SRL  (HL)      CB 3E       16 z00c shift right logical (b7=0)
+
+# Single Bit Operation Commands
+# ------ --- --------- --------
+BIT  n,r       CB xx        8 z01- test bit n
+BIT  n,(HL)    CB xx       12 z01- test bit n
+SET  n,r       CB xx        8 ---- set bit n
+SET  n,(HL)    CB xx       16 ---- set bit n
+RES  n,r       CB xx        8 ---- reset bit n
+RES  n,(HL)    CB xx       16 ---- reset bit n
+
+
+# CPU Control Commands
+# --- ------- --------
+CCF            3F           4 -00c cy=cy xor 1
+SCF            37           4 -001 cy=1
+NOP            00           4 ---- no operation
+HALT           76         N*4 ---- halt until interrupt occurs (low power)
+STOP           10 00        ? ---- low power standby mode (VERY low power)
+DI             F3           4 ---- disable interrupts, IME=0
+EI             FB           4 ---- enable interrupts, IME=1
+
+# Jump Commands
+# ---- --------
+JP   nn        C3 nn nn    16 ---- jump to nn, PC=nn
+JP   HL        E9           4 ---- jump to HL, PC=HL
+JP   f,nn      xx nn nn 16;12 ---- conditional jump if nz,z,nc,c
+JR   PC+dd     18 dd       12 ---- relative jump to nn (PC=PC+/-7bit)
+JR   f,PC+dd   xx dd     12;8 ---- conditional relative jump if nz,z,nc,c
+CALL nn        CD nn nn    24 ---- call to nn, SP=SP-2, (SP)=PC, PC=nn
+CALL f,nn      xx nn nn 24;12 ---- conditional call if nz,z,nc,c
+RET            C9          16 ---- return, PC=(SP), SP=SP+2
+RET  f         xx        20;8 ---- conditional return if nz,z,nc,c
+RETI           D9          16 ---- return and enable interrupts (IME=1)
+RST  n         xx          16 ---- call to 00,08,10,18,20,28,30,38
