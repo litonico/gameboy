@@ -1,3 +1,4 @@
+#![allow(non_snake_case)] // CPU Opcodes have capitalized names
 // Wolves and the Ravens - Rogue Valley
 // Holding - Grouper
 // In for the Kill - Billie Marten
@@ -13,7 +14,7 @@ const CARRY     : u8 = 0x10;
 
 struct RegisterSet {
     // 8-bit registers
-    a: u8, // TODO: check with ADDr and stuff for types
+    a: u8,
     b: u8,
     c: u8,
     d: u8,
@@ -92,6 +93,34 @@ macro_rules! LDrn {
     )
 }
 
+/// LD   r,(HL)      xx         8 ---- r=(HL)
+/// Load a register r with the with the byte at a memory location,
+/// where the memory location is the contents of the HL registers.
+macro_rules! LDrHL {
+    ($cpu:ident, $r:ident) => (
+        {
+            $cpu.regs.$r = $cpu.read_at_hl();
+            $cpu.clock.tick(2);
+        }
+    )
+}
+
+/// LD   (HL),r      7x         8 ---- (HL)=r
+/// Load the location given by registers HL with contents of register r
+
+macro_rules! LDHLr {
+    ($cpu:ident, $r:ident) => (
+        {
+            let ref regs = $cpu.regs;
+            let h = regs.h as u16;
+            let l = regs.l as u16;
+            let hl = h<<8 | l;
+            $cpu.mmu.write_byte(hl, regs.$r);
+            $cpu.clock.tick(2);
+        }
+    )
+}
+
 impl Z80 {
     pub fn new() -> Z80 {
         Z80 {
@@ -102,10 +131,10 @@ impl Z80 {
     }
 
     // Utilities
-    fn hl(&mut self) -> u8 {
-        let ref reg = self.regs;
-        let h = reg.h as u16;
-        let l = reg.l as u16;
+    fn read_at_hl(&mut self) -> u8 {
+        let ref regs = self.regs;
+        let h = regs.h as u16;
+        let l = regs.l as u16;
         self.mmu.read(h<<8 | l)
     }
 
@@ -132,8 +161,8 @@ impl Z80 {
         let overflowing_sum : u16 = a as u16 + b as u16;
         // Set the appropriate flags
         self.clear_flags();
-        if (overflowing_sum == 0) { self.set_flag(ZERO) }
-        if (overflowing_sum > 0xFF) { self.set_flag(CARRY) }
+        if overflowing_sum == 0 { self.set_flag(ZERO) }
+        if overflowing_sum > 0xFF { self.set_flag(CARRY) }
         // Mask result to 8 bits
         let sum = overflowing_sum as u8;
         sum
@@ -143,8 +172,8 @@ impl Z80 {
         let overflowing_sum : u32 = a as u32 + b as u32;
         // Set the appropriate flags
         self.clear_flags();
-        if (overflowing_sum == 0) { self.set_flag(ZERO) }
-        if (overflowing_sum > 0xFFFF) { self.set_flag(CARRY) }
+        if overflowing_sum == 0 { self.set_flag(ZERO) }
+        if overflowing_sum > 0xFFFF { self.set_flag(CARRY) }
         // Mask result to 8 bits
         let sum = overflowing_sum as u16;
         sum
@@ -155,13 +184,13 @@ impl Z80 {
 
     fn ADCHLss(&mut self) { // Add with carry register pair ss to HL.
         let A = self.regs.a;
-        let HL = self.hl();
+        let HL = self.read_at_hl();
         self.regs.a = self.add8(A, HL);
         self.clock.tick(1);
     }
 
     fn CCF(&mut self) { // Complement carry flag.
-        if (self.flag_is_set(CARRY)){
+        if self.flag_is_set(CARRY) {
             self.unset_flag(CARRY);
         } else {
             self.set_flag(CARRY);
@@ -257,13 +286,29 @@ impl Z80 {
     fn LDrn_l(&mut self) { LDrn!(self,l); }
 
 /// LD   r,(HL)      xx         8 ---- r=(HL)
-/// Load a register r with the contents of the HL registers
+/// Load a register r with the memory at location given by the HL registers
+    fn LDrHL_a(&mut self) { LDrHL!(self,a); }
+    fn LDrHL_b(&mut self) { LDrHL!(self,b); }
+    fn LDrHL_c(&mut self) { LDrHL!(self,c); }
+    fn LDrHL_d(&mut self) { LDrHL!(self,d); }
+    fn LDrHL_e(&mut self) { LDrHL!(self,e); }
+    fn LDrHL_h(&mut self) { LDrHL!(self,h); }
+    fn LDrHL_l(&mut self) { LDrHL!(self,l); }
+
+/// LD   (HL),r      7x         8 ---- (HL)=r
+/// Load the location given by registers HL with contents of register r
+    fn LDHLr_a(&mut self) { LDHLr!(self,a); }
+    fn LDHLr_b(&mut self) { LDHLr!(self,b); }
+    fn LDHLr_c(&mut self) { LDHLr!(self,c); }
+    fn LDHLr_d(&mut self) { LDHLr!(self,d); }
+    fn LDHLr_e(&mut self) { LDHLr!(self,e); }
+    fn LDHLr_h(&mut self) { LDHLr!(self,h); }
+    fn LDHLr_l(&mut self) { LDHLr!(self,l); }
+
 
 /*
 # 8-bit Load Commands
 # ----- ---- --------
-LD   r,(HL)      xx         8 ---- r=(HL)
-LD   (HL),r      7x         8 ---- (HL)=r
 LD   (HL),n      36 nn     12 ----
 LD   A,(BC)      0A         8 ----
 LD   A,(DE)      1A         8 ----
@@ -386,77 +431,7 @@ RETI           D9          16 ---- return and enable interrupts (IME=1)
 RST  n         xx          16 ---- call to 00,08,10,18,20,28,30,38
  */
     fn NOP(&mut self) {
-        self.clock.m += 1;
-        self.clock.t += 4;
-    }
-
-    fn PUSHBC(&mut self) { // Push B and C to the stack
-        self.regs.sp -= 1;
-        self.mmu.wb(self.regs.sp, self.regs.b);
-        self.regs.sp -= 1;
-        self.mmu.wb(self.regs.sp, self.regs.c);
-
-        self.clock.tick(3);
-    }
-
-
-    fn reset(&mut self) {
-        self.regs.a = 0; self.regs.b = 0; self.regs.c = 0; self.regs.d = 0;
-        self.regs.e = 0; self.regs.h = 0; self.regs.l = 0; self.regs.f = 0;
-        self.regs.sp = 0;
-        self.regs.pc = 0;
-
-        self.clock.m = 0;
-        self.clock.t = 0;
-    }
-
-
-    fn ADDr_e(&mut self) { // TODO: regs.a may need to be longer than u8
-        self.regs.a += self.regs.e;
-        self.regs.f = 0;
-        // x & 255 is used to strip a number longer than 8 bits to that length
-        if !(self.regs.a & 255 == 0) {
-            // combine 0x80 with any other flags by way of the |= operator
-            self.regs.f |= 0x80;
-        }
-        if self.regs.a > 255 {
-            self.regs.f |= 0x10;
-        }
-
-        self.regs.a &= 255;
-
         self.clock.tick(1);
-    }
-    fn CPr_e(&mut self) {
-        let mut i = self.regs.a; // Store A
-        i -= self.regs.b;
-        self.regs.f |= 0x40;
-        if !(i & 255 == 0) {
-            self.regs.f |= 0x80;
-        }
-        if i < 0 {
-            self.regs.f |= 0x10;
-        }
-
-        self.clock.tick(1);
-    }
-
-
-    fn POPHL(&mut self) {
-        self.regs.l = self.mmu.read(self.regs.sp); // read from stack pointer address
-        self.regs.sp += 1;
-        self.regs.h = self.mmu.read(self.regs.sp);
-        self.regs.sp += 1;
-
-        self.clock.tick(3);
-    }
-
-    fn LDAmm(&mut self) { // Read from location into A
-        let addr = self.mmu.rw(self.regs.pc);
-        self.regs.pc += 2; // It's a full 16 bits, so advance twice
-        self.regs.a = self.mmu.read(addr);
-
-        self.clock.tick(4);
     }
 
     fn call(&mut self, opcode: u8) {
@@ -790,13 +765,13 @@ fn test_unsetting_flags() {
     assert!(!cpu.flag_is_set(CARRY));
 }
 
+// Because a macro is used to generate this code,
+// we hope we can get away with just testing one case.
+// NOTE that this is dangerous, because it won't catch if
+// we've forgotten to generate a case!
 #[test]
 fn test_the_instruction_set_can_LDrr() {
     let mut cpu = Z80::new();
-    // Because a macro is used to generate this code,
-    // we hope we can get away with just testing one case.
-    // This is dangerous, because it won't catch if we've forgotten
-    // to generate a case!
     cpu.regs.b = 0x01;
     cpu.LDrr_ab();
     assert_eq!(cpu.regs.a, 0x01)
@@ -805,15 +780,33 @@ fn test_the_instruction_set_can_LDrr() {
 #[test]
 fn test_the_instruction_set_can_LDrn() {
     let mut cpu = Z80::new();
-    // Because a macro is used to generate this code,
-    // we hope we can get away with just testing one case.
-    // This is dangerous, because it won't catch if we've forgotten
-    // to generate a case!
     cpu.regs.a = 0x05;
-    cpu.regs.pc = 0xC000;
+    cpu.regs.pc = 0xC000; // At the start of memory
     cpu.LDrn_a();
     // MMU is filled with zeros, so expect regs.a to be zeros now, too
-    assert_eq!(cpu.regs.a, 0x00)
+    assert_eq!(cpu.regs.a, 0x00);
+    assert_eq!(cpu.regs.pc, 0xC001);
+}
+
+#[test]
+fn test_the_instruction_set_can_LDrHL() {
+    let mut cpu = Z80::new();
+    cpu.regs.a = 0x01;
+    cpu.regs.h = 0xC0;
+    cpu.regs.l = 0x01;
+    cpu.mmu.write_byte(0xC001, 0x05);
+    cpu.LDrHL_a();
+    assert_eq!(cpu.regs.a, 0x05);
+}
+
+#[test]
+fn test_the_instruction_set_can_LDHLr() {
+    let mut cpu = Z80::new();
+    cpu.regs.a = 0x01;
+    cpu.regs.h = 0xC0;
+    cpu.regs.l = 0x01;
+    cpu.LDHLr_a();
+    assert_eq!(cpu.mmu.read(0xC001), 0x01);
 }
 
 #[test]

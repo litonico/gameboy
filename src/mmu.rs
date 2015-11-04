@@ -60,8 +60,12 @@ impl MMU {
         0x0 // TODO
     }
 
-    pub fn wb(&mut self, addr: u16, val: u8) {} // write 8-bits
-    pub fn ww(&mut self, addr: u16, val: u16) {} // write 16-bits TODO: Dunno types
+    pub fn write_byte(&mut self, address: u16, val: u8) { // write 8-bits
+        let addr = address as usize;
+        self.wram[addr - 0xC000] = val;
+    }
+
+    pub fn write_word(&mut self, addr: u16, val: u16) {} // write 16-bits TODO: Dunno types
 
     /*
     pub fn open() {
@@ -69,4 +73,12 @@ impl MMU {
         File::open(rom_path).read_to_end();
     }
     */
+}
+
+#[test]
+fn test_writing_a_byte() {
+    let mut mmu = MMU::new();
+    mmu.write_byte(0xC001, 0x05);
+    assert_eq!(mmu.read(0xC001), 0x05);
+
 }
