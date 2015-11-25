@@ -335,6 +335,16 @@ impl Z80 {
         self.clock.tick(3);
     }
 
+/// LD   A,(BC)      0A         8 ----
+/// Load register a with the value at location BC
+    fn LDABC(&mut self) {
+        let b = self.regs.b as u16;
+        let c = self.regs.c as u16;
+        let bc_value = self.mmu.read(b<<8 | c);
+        self.regs.a = bc_value;
+        self.clock.tick(2);
+    }
+
 
 /*
 OPCODES
@@ -342,7 +352,6 @@ OPCODES
 
 # 8-bit Load Commands
 # ----- ---- --------
-LD   A,(BC)      0A         8 ----
 LD   A,(DE)      1A         8 ----
 LD   A,(nn)      FA        16 ----
 LD   (BC),A      02         8 ----
@@ -875,6 +884,19 @@ fn test_the_instruction_set_can_LDHLn() {
     cpu.LDHLn();
     assert_eq!(cpu.mmu.read(0xC005), 0x01);
 }
+
+#[test]
+fn test_the_instruction_set_can_LDABC() {
+    let mut cpu = Z80::new();
+    cpu.regs.b = 0xC0;
+    cpu.regs.c = 0x05;
+    cpu.regs.a = 0x01;
+    cpu.mmu.write_byte(0xC005, 0x02);
+    cpu.LDABC();
+    assert_eq!(cpu.regs.a, 0x02);
+}
+
+#[test]
 
 #[test]
 fn test_the_instruction_set_can_CCF() {
