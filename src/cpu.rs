@@ -7,6 +7,8 @@
 // Lo-Fang
 // Dan Grossman UW CS341
 
+use ::types::{Byte, Word, Address};
+
 const ZERO      : u8 = 0x80;
 const SUBTRACT  : u8 = 0x40;
 const HALFCARRY : u8 = 0x20;
@@ -66,8 +68,8 @@ pub struct Z80 {
     mmu: ::mmu::MMU,
 }
 
-/// CPU Macro Definitions
-///
+/// CPU Opcode Macro Definitions
+
 /// LD   r,r         xx         4 ---- r=r
 /// Load a register r1 with another register r2.
 macro_rules! LDrr {
@@ -82,12 +84,10 @@ macro_rules! LDrr {
 /// LD   r,n         xx nn      8 ---- r=n
 /// Load a register r with a number nn, which is read from where
 /// the program counter is right now.
-
 macro_rules! LDrn {
     ($cpu:ident, $r:ident) => (
         {
-            $cpu.regs.$r = $cpu.mmu.read($cpu.regs.pc);
-            $cpu.regs.pc += 1;
+            $cpu.regs.$r = $cpu.read_immediate_value();
             $cpu.clock.tick(2);
         }
     )
@@ -99,7 +99,7 @@ macro_rules! LDrn {
 macro_rules! LDrHL {
     ($cpu:ident, $r:ident) => (
         {
-            $cpu.regs.$r = $cpu.read_at_hl();
+            $cpu.regs.$r = $cpu.read_hl();
             $cpu.clock.tick(2);
         }
     )
@@ -107,16 +107,25 @@ macro_rules! LDrHL {
 
 /// LD   (HL),r      7x         8 ---- (HL)=r
 /// Load the location given by registers HL with contents of register r
-
 macro_rules! LDHLr {
     ($cpu:ident, $r:ident) => (
         {
-            let ref regs = $cpu.regs;
-            let h = regs.h as u16;
-            let l = regs.l as u16;
-            let hl = h<<8 | l;
-            $cpu.mmu.write_byte(hl, regs.$r);
+            let r = $cpu.regs.$r;
+            $cpu.write_hl(r);
             $cpu.clock.tick(2);
+        }
+    )
+}
+
+/// ADD  A,r         8x         4 z0hc A=A+r
+/// Add a register to A and store the result in A
+macro_rules! ADDr {
+    ($cpu:ident, $r:ident) => (
+        {
+            let a = $cpu.regs.a;
+            let r = $cpu.regs.$r;
+            $cpu.regs.a = $cpu.add8(a, r);
+            $cpu.clock.tick(1);
         }
     )
 }
@@ -131,11 +140,24 @@ impl Z80 {
     }
 
     // Utilities
-    fn read_at_hl(&mut self) -> u8 {
+    fn read_hl(&mut self) -> u8 {
         let ref regs = self.regs;
         let h = regs.h as u16;
         let l = regs.l as u16;
         self.mmu.read(h<<8 | l)
+    }
+
+    fn write_hl(&mut self, b: u8) {
+        let h = self.regs.h as u16;
+        let l = self.regs.l as u16;
+        let hl = (h<<8 | l);
+        self.mmu.write_byte(hl, b);
+    }
+
+    fn read_immediate_value(&mut self) -> u8 {
+        let n = self.mmu.read(self.regs.pc);
+        self.regs.pc += 1;
+        n
     }
 
     fn flag_is_set(&mut self, flag: u8) -> bool {
@@ -184,7 +206,7 @@ impl Z80 {
 
     fn ADCHLss(&mut self) { // Add with carry register pair ss to HL.
         let A = self.regs.a;
-        let HL = self.read_at_hl();
+        let HL = self.read_hl();
         self.regs.a = self.add8(A, HL);
         self.clock.tick(1);
     }
@@ -272,11 +294,10 @@ impl Z80 {
     fn LDrr_ll(&mut self) { LDrr!(self,l,l); }
 
 /// LD   r,n         xx nn      8 ---- r=n
-/// Load a register r with a number nn, which is read from where
-/// the program counter is right now.
+/// Load a register r with a constant n, read from
+/// the byte under the progam counter
 /// This works for registers a, b, c, d, e, h, and l!
 
-    // l
     fn LDrn_a(&mut self) { LDrn!(self,a); }
     fn LDrn_b(&mut self) { LDrn!(self,b); }
     fn LDrn_c(&mut self) { LDrn!(self,c); }
@@ -305,11 +326,22 @@ impl Z80 {
     fn LDHLr_h(&mut self) { LDHLr!(self,h); }
     fn LDHLr_l(&mut self) { LDHLr!(self,l); }
 
+/// LD   (HL),n      36 nn     12 ----
+/// Load the immediate value n (given in the source, currently at pc) into
+/// the location given by HL
+    fn LDHLn(&mut self) {
+        let n = self.read_immediate_value();
+        self.write_hl(n);
+        self.clock.tick(3);
+    }
+
 
 /*
+OPCODES
+=======
+
 # 8-bit Load Commands
 # ----- ---- --------
-LD   (HL),n      36 nn     12 ----
 LD   A,(BC)      0A         8 ----
 LD   A,(DE)      1A         8 ----
 LD   A,(nn)      FA        16 ----
@@ -332,10 +364,23 @@ LD   SP,HL       F9         8 ---- SP=HL
 PUSH rr          x5        16 ---- SP=SP-2  (SP)=rr   (rr may be BC,DE,HL,AF)
 POP  rr          x1        12 (AF) rr=(SP)  SP=SP+2   (rr may be BC,DE,HL,AF)
 
+*/
+/// ADD  A,r         8x         4 z0hc A=A+r
+/// Add a register to A and store the result in A
+
+    fn ADDr_a(&mut self) { ADDr!(self,a); }
+    fn ADDr_b(&mut self) { ADDr!(self,b); }
+    fn ADDr_c(&mut self) { ADDr!(self,c); }
+    fn ADDr_d(&mut self) { ADDr!(self,d); }
+    fn ADDr_e(&mut self) { ADDr!(self,e); }
+    fn ADDr_h(&mut self) { ADDr!(self,h); }
+    fn ADDr_l(&mut self) { ADDr!(self,l); }
+/// ADD  A,n         C6 nn      8 z0hc A=A+n
+/// Add the byte at location PC to A
+/*
+
 # 8-bit Arithmetic Commands
 # ----- ---------- --------
-ADD  A,r         8x         4 z0hc A=A+r
-ADD  A,n         C6 nn      8 z0hc A=A+n
 ADD  A,(HL)      86         8 z0hc A=A+(HL)
 ADC  A,r         8x         4 z0hc A=A+r+cy
 ADC  A,n         CE nn      8 z0hc A=A+n+cy
@@ -781,7 +826,8 @@ fn test_the_instruction_set_can_LDrr() {
 fn test_the_instruction_set_can_LDrn() {
     let mut cpu = Z80::new();
     cpu.regs.a = 0x05;
-    cpu.regs.pc = 0xC000; // At the start of memory
+    // At the start of memory (should be in ROM, but... we can't write there)
+    cpu.regs.pc = 0xC000;
     cpu.LDrn_a();
     // MMU is filled with zeros, so expect regs.a to be zeros now, too
     assert_eq!(cpu.regs.a, 0x00);
@@ -807,6 +853,27 @@ fn test_the_instruction_set_can_LDHLr() {
     cpu.regs.l = 0x01;
     cpu.LDHLr_a();
     assert_eq!(cpu.mmu.read(0xC001), 0x01);
+}
+
+#[test]
+fn test_the_instruction_set_can_ADDr() {
+    let mut cpu = Z80::new();
+    cpu.regs.a = 0x01;
+    cpu.regs.b = 0x05;
+    cpu.ADDr_b();
+    assert_eq!(cpu.regs.a, 0x06);
+}
+
+#[test]
+fn test_the_instruction_set_can_LDHLn() {
+    let mut cpu = Z80::new();
+    cpu.regs.h = 0xC0;
+    cpu.regs.l = 0x05;
+    cpu.regs.pc = 0xC000;
+    cpu.mmu.write_byte(0xC000, 0x01);
+    cpu.mmu.write_byte(0xC005, 0x02);
+    cpu.LDHLn();
+    assert_eq!(cpu.mmu.read(0xC005), 0x01);
 }
 
 #[test]

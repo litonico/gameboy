@@ -21,7 +21,7 @@ impl MMU {
         }
     }
 
-    pub fn read(&mut self, address: u16) -> u8 {  // read 8-bit byte
+    pub fn read(&mut self, address: u16) -> u8 {
         let addr = address as usize;
         match addr {
             // When the gameboy starts up, all reads from 0x000 ... 0x0100
