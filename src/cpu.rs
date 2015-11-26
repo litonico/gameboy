@@ -295,7 +295,7 @@ impl Z80 {
 
 /// LD   r,n         xx nn      8 ---- r=n
 /// Load a register r with a constant n, read from
-/// the byte under the progam counter
+/// the immediate value under the progam counter
 /// This works for registers a, b, c, d, e, h, and l!
 
     fn LDrn_a(&mut self) { LDrn!(self,a); }
@@ -327,8 +327,7 @@ impl Z80 {
     fn LDHLr_l(&mut self) { LDHLr!(self,l); }
 
 /// LD   (HL),n      36 nn     12 ----
-/// Load the immediate value n (given in the source, currently at pc) into
-/// the location given by HL
+/// Load the immediate value n into the location given by HL
     fn LDHLn(&mut self) {
         let n = self.read_immediate_value();
         self.write_hl(n);
@@ -345,6 +344,15 @@ impl Z80 {
         self.clock.tick(2);
     }
 
+/// LD   A,(DE)      1A         8 ----
+/// Load register a with the value at location DE
+    fn LDADE(&mut self) {
+        let d = self.regs.d as u16;
+        let e = self.regs.e as u16;
+        let de_value = self.mmu.read(d<<8 | e);
+        self.regs.a = de_value;
+        self.clock.tick(2);
+    }
 
 /*
 OPCODES
@@ -352,7 +360,6 @@ OPCODES
 
 # 8-bit Load Commands
 # ----- ---- --------
-LD   A,(DE)      1A         8 ----
 LD   A,(nn)      FA        16 ----
 LD   (BC),A      02         8 ----
 LD   (DE),A      12         8 ----
@@ -893,6 +900,17 @@ fn test_the_instruction_set_can_LDABC() {
     cpu.regs.a = 0x01;
     cpu.mmu.write_byte(0xC005, 0x02);
     cpu.LDABC();
+    assert_eq!(cpu.regs.a, 0x02);
+}
+
+#[test]
+fn test_the_instruction_set_can_LDADE() {
+    let mut cpu = Z80::new();
+    cpu.regs.d = 0xC0;
+    cpu.regs.e = 0x05;
+    cpu.regs.a = 0x01;
+    cpu.mmu.write_byte(0xC005, 0x02);
+    cpu.LDADE();
     assert_eq!(cpu.regs.a, 0x02);
 }
 
