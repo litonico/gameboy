@@ -1,3 +1,18 @@
+## Gameboy Opcodes
+##
+## Commands are listed in the form
+##
+## LD   (HL),r      7x         8 ---- (HL)=r
+##
+## Where
+##
+## LD        Command type
+## (HL),r    Param1, Param2
+## 7x        Opcode (if multiple commands, an 'x' will be shown)
+## 8         Clock Cycles Used
+## ----      Flags set
+## (HL)=r    Outcome
+
 # 8-bit Load Commands
 # ----- ---- --------
 LD   r,r         xx         4 ---- r=r
