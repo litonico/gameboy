@@ -382,7 +382,7 @@ POP  rr          x1        12 (AF) rr=(SP)  SP=SP+2   (rr may be BC,DE,HL,AF)
 
 */
 /// ADD  A,r         8x         4 z0hc A=A+r
-/// Add a register to A and store the result in A
+/// Add any register to A and store the result in A
 
     fn ADDr_a(&mut self) { ADDr!(self,a); }
     fn ADDr_b(&mut self) { ADDr!(self,b); }
@@ -391,13 +391,23 @@ POP  rr          x1        12 (AF) rr=(SP)  SP=SP+2   (rr may be BC,DE,HL,AF)
     fn ADDr_e(&mut self) { ADDr!(self,e); }
     fn ADDr_h(&mut self) { ADDr!(self,h); }
     fn ADDr_l(&mut self) { ADDr!(self,l); }
+
 /// ADD  A,n         C6 nn      8 z0hc A=A+n
-/// Add the byte at location PC to A
+/// Add the immediate value to A
+    fn ADDn(&mut self) {
+        let a = self.regs.a;
+        let n = self.read_immediate_value();
+        self.regs.a = self.add8(a, n);
+        self.clock.tick(2);
+    }
+
+/// ADD  A,(HL)      86         8 z0hc A=A+(HL)
+/// Add the contents of location HL to register a
+
 /*
 
 # 8-bit Arithmetic Commands
 # ----- ---------- --------
-ADD  A,(HL)      86         8 z0hc A=A+(HL)
 ADC  A,r         8x         4 z0hc A=A+r+cy
 ADC  A,n         CE nn      8 z0hc A=A+n+cy
 ADC  A,(HL)      8E         8 z0hc A=A+(HL)+cy
@@ -872,15 +882,6 @@ fn test_the_instruction_set_can_LDHLr() {
 }
 
 #[test]
-fn test_the_instruction_set_can_ADDr() {
-    let mut cpu = Z80::new();
-    cpu.regs.a = 0x01;
-    cpu.regs.b = 0x05;
-    cpu.ADDr_b();
-    assert_eq!(cpu.regs.a, 0x06);
-}
-
-#[test]
 fn test_the_instruction_set_can_LDHLn() {
     let mut cpu = Z80::new();
     cpu.regs.h = 0xC0;
@@ -914,7 +915,26 @@ fn test_the_instruction_set_can_LDADE() {
     assert_eq!(cpu.regs.a, 0x02);
 }
 
+
 #[test]
+fn test_the_instruction_set_can_ADDr() {
+    let mut cpu = Z80::new();
+    cpu.regs.a = 0x01;
+    cpu.regs.b = 0x05;
+    cpu.ADDr_b();
+    assert_eq!(cpu.regs.a, 0x06);
+}
+
+#[test]
+fn test_the_instruction_set_can_ADDn() {
+    let mut cpu = Z80::new();
+    cpu.regs.a = 0x64; // 100
+    cpu.regs.pc = 0xC000;
+    cpu.mmu.write_byte(0xC000, 0xC8); // 200
+    cpu.ADDn();
+    assert!(cpu.flag_is_set(CARRY));
+    assert_eq!(cpu.regs.a, 0x2C); // = 256 (carry bit) + 44
+}
 
 #[test]
 fn test_the_instruction_set_can_CCF() {
