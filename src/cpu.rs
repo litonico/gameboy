@@ -130,6 +130,26 @@ macro_rules! ADDr {
     )
 }
 
+/// ADC  A,r         8x         4 z0hc A=A+r+cy
+/// Add the the contents of register r to register a. If the carry bit is set,
+/// add 1 to the result.
+
+macro_rules! ADCr {
+    ($cpu:ident, $r:ident) => (
+        {
+            let a = $cpu.regs.a;
+            let r = $cpu.regs.$r;
+            $cpu.regs.a = $cpu.add8(a, r);
+            if $cpu.flag_is_set(CARRY) {
+                // This will never overflow, so the direct add is ok
+                $cpu.regs.a += 1;
+            }
+            $cpu.clock.tick(1);
+        }
+    )
+}
+
+
 impl Z80 {
     pub fn new() -> Z80 {
         Z80 {
@@ -404,12 +424,43 @@ POP  rr          x1        12 (AF) rr=(SP)  SP=SP+2   (rr may be BC,DE,HL,AF)
 /// ADD  A,(HL)      86         8 z0hc A=A+(HL)
 /// Add the contents of location HL to register a
 
+    fn ADDHL(&mut self) {
+        let a = self.regs.a;
+        let hl = self.read_hl();
+        self.regs.a = self.add8(a, hl);
+        self.clock.tick(2);
+    }
+
+/// ADC  A,r         8x         4 z0hc A=A+r+cy
+/// Add the contents of register r to register a. If the carry bit is set,
+/// add 1 to the result.
+
+    fn ADCr_a(&mut self) { ADCr!(self,a); }
+    fn ADCr_b(&mut self) { ADCr!(self,b); }
+    fn ADCr_c(&mut self) { ADCr!(self,c); }
+    fn ADCr_d(&mut self) { ADCr!(self,d); }
+    fn ADCr_e(&mut self) { ADCr!(self,e); }
+    fn ADCr_h(&mut self) { ADCr!(self,h); }
+    fn ADCr_l(&mut self) { ADCr!(self,l); }
+
+/// ADC  A,n         CE nn      8 z0hc A=A+n+cy
+/// Add the immediate value n to register a. If the carry bit is set,
+/// add 1 to the result.
+    fn ADCn(&mut self) {
+
+        let a = self.regs.a;
+        let n = self.read_immediate_value();
+        self.regs.a = self.add8(a, n);
+        if self.flag_is_set(CARRY) {
+            self.regs.a += 1;
+        }
+        self.clock.tick(2);
+    }
+
 /*
 
 # 8-bit Arithmetic Commands
 # ----- ---------- --------
-ADC  A,r         8x         4 z0hc A=A+r+cy
-ADC  A,n         CE nn      8 z0hc A=A+n+cy
 ADC  A,(HL)      8E         8 z0hc A=A+(HL)+cy
 SUB  r           9x         4 z1hc A=A-r
 SUB  n           D6 nn      8 z1hc A=A-n
@@ -845,7 +896,8 @@ fn test_the_instruction_set_can_LDrr() {
     let mut cpu = Z80::new();
     cpu.regs.b = 0x01;
     cpu.LDrr_ab();
-    assert_eq!(cpu.regs.a, 0x01)
+    assert_eq!(cpu.regs.a, 0x01);
+    assert_eq!(cpu.clock.t, 4);
 }
 
 #[test]
@@ -858,6 +910,7 @@ fn test_the_instruction_set_can_LDrn() {
     // MMU is filled with zeros, so expect regs.a to be zeros now, too
     assert_eq!(cpu.regs.a, 0x00);
     assert_eq!(cpu.regs.pc, 0xC001);
+    assert_eq!(cpu.clock.t, 8);
 }
 
 #[test]
@@ -869,6 +922,7 @@ fn test_the_instruction_set_can_LDrHL() {
     cpu.mmu.write_byte(0xC001, 0x05);
     cpu.LDrHL_a();
     assert_eq!(cpu.regs.a, 0x05);
+    assert_eq!(cpu.clock.t, 8);
 }
 
 #[test]
@@ -879,6 +933,7 @@ fn test_the_instruction_set_can_LDHLr() {
     cpu.regs.l = 0x01;
     cpu.LDHLr_a();
     assert_eq!(cpu.mmu.read(0xC001), 0x01);
+    assert_eq!(cpu.clock.t, 8);
 }
 
 #[test]
@@ -891,6 +946,7 @@ fn test_the_instruction_set_can_LDHLn() {
     cpu.mmu.write_byte(0xC005, 0x02);
     cpu.LDHLn();
     assert_eq!(cpu.mmu.read(0xC005), 0x01);
+    assert_eq!(cpu.clock.t, 12);
 }
 
 #[test]
@@ -902,6 +958,7 @@ fn test_the_instruction_set_can_LDABC() {
     cpu.mmu.write_byte(0xC005, 0x02);
     cpu.LDABC();
     assert_eq!(cpu.regs.a, 0x02);
+    assert_eq!(cpu.clock.t, 8);
 }
 
 #[test]
@@ -913,34 +970,78 @@ fn test_the_instruction_set_can_LDADE() {
     cpu.mmu.write_byte(0xC005, 0x02);
     cpu.LDADE();
     assert_eq!(cpu.regs.a, 0x02);
+    assert_eq!(cpu.clock.t, 8);
 }
 
 
 #[test]
 fn test_the_instruction_set_can_ADDr() {
     let mut cpu = Z80::new();
-    cpu.regs.a = 0x01;
-    cpu.regs.b = 0x05;
+    cpu.regs.a = 0x64;
+    cpu.regs.b = 0xC8;
     cpu.ADDr_b();
-    assert_eq!(cpu.regs.a, 0x06);
+    assert!(cpu.flag_is_set(CARRY));
+    assert_eq!(cpu.regs.a, 0x2C); // = 256 (carry bit) + 44
+    assert_eq!(cpu.clock.t, 4);
 }
 
 #[test]
 fn test_the_instruction_set_can_ADDn() {
     let mut cpu = Z80::new();
-    cpu.regs.a = 0x64; // 100
+    cpu.regs.a = 0x64;
     cpu.regs.pc = 0xC000;
-    cpu.mmu.write_byte(0xC000, 0xC8); // 200
+    cpu.mmu.write_byte(0xC000, 0xC8);
     cpu.ADDn();
     assert!(cpu.flag_is_set(CARRY));
-    assert_eq!(cpu.regs.a, 0x2C); // = 256 (carry bit) + 44
+    assert_eq!(cpu.regs.a, 0x2C);
+    assert_eq!(cpu.clock.t, 8);
 }
+
+#[test]
+fn test_the_instruction_set_can_ADDHL() {
+    let mut cpu = Z80::new();
+    cpu.regs.a = 0x64;
+    cpu.regs.h = 0xC0;
+    cpu.regs.l = 0x01;
+    cpu.mmu.write_byte(0xC001, 0xC8);
+    cpu.ADDHL();
+    assert!(cpu.flag_is_set(CARRY));
+    assert_eq!(cpu.regs.a, 0x2C);
+    assert_eq!(cpu.clock.t, 8);
+}
+
+#[test]
+fn test_the_instruction_set_can_ADCr_b() {
+    let mut cpu = Z80::new();
+    cpu.regs.a = 0x64;
+    cpu.regs.b = 0xC8;
+    cpu.mmu.write_byte(0xC001, 0xC8);
+    cpu.ADCr_b();
+    assert!(cpu.flag_is_set(CARRY));
+    assert_eq!(cpu.regs.a, 0x2D);
+    assert_eq!(cpu.clock.t, 4);
+}
+
+#[test]
+fn test_the_instruction_set_can_ADCn() {
+    let mut cpu = Z80::new();
+    cpu.regs.a = 0x64;
+    cpu.regs.pc = 0xC000;
+    cpu.mmu.write_byte(0xC000, 0xC8);
+    cpu.ADCn();
+    assert!(cpu.flag_is_set(CARRY));
+    assert_eq!(cpu.regs.a, 0x2D);
+    assert_eq!(cpu.clock.t, 8);
+}
+
 
 #[test]
 fn test_the_instruction_set_can_CCF() {
     let mut cpu = Z80::new();
     cpu.CCF();
-    assert!(cpu.flag_is_set(CARRY));
+    assert!( cpu.flag_is_set(CARRY) );
+    assert_eq!(cpu.clock.t, 4);
     cpu.CCF();
-    assert!(!cpu.flag_is_set(CARRY));
+    assert!( !cpu.flag_is_set(CARRY) );
+    assert_eq!(cpu.clock.t, 8);
 }
