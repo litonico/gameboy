@@ -87,7 +87,7 @@ macro_rules! LDrr {
 macro_rules! LDrn {
     ($cpu:ident, $r:ident) => (
         {
-            $cpu.regs.$r = $cpu.read_immediate_value();
+            $cpu.regs.$r = $cpu.read_immediate_byte();
             $cpu.clock.tick(2);
         }
     )
@@ -174,10 +174,19 @@ impl Z80 {
         self.mmu.write_byte(hl, b);
     }
 
-    fn read_immediate_value(&mut self) -> u8 {
+    fn read_immediate_byte(&mut self) -> u8 {
         let n = self.mmu.read(self.regs.pc);
         self.regs.pc += 1;
         n
+    }
+
+    fn read_immediate_word(&mut self) -> u16 {
+        let small_byte = self.mmu.read(self.regs.pc) as u16;
+        self.regs.pc += 1;
+        let large_byte = self.mmu.read(self.regs.pc) as u16;
+        self.regs.pc += 1;
+        let nn = (large_byte<<8 | small_byte);
+        nn
     }
 
     fn flag_is_set(&mut self, flag: u8) -> bool {
@@ -349,7 +358,7 @@ impl Z80 {
 /// LD   (HL),n      36 nn     12 ----
 /// Load the immediate value n into the location given by HL
     fn LDHLn(&mut self) {
-        let n = self.read_immediate_value();
+        let n = self.read_immediate_byte();
         self.write_hl(n);
         self.clock.tick(3);
     }
@@ -374,15 +383,42 @@ impl Z80 {
         self.clock.tick(2);
     }
 
+/// LD   A,(nn)      FA nn nn   16 ----
+/// Load register a with the value at location nn, where nn is a two-byte
+/// immediate value with the least significant byte first.
+    fn LDAnn(&mut self) {
+        let nn = self.read_immediate_word();
+        let nn_value = self.mmu.read(nn);
+        self.regs.a = nn_value;
+        self.clock.tick(4);
+    }
+
+/// LD   (BC),A      02         8 ----
+/// Load location BC with the contents of A
+    fn LDBCA(&mut self) {
+        let a = self.regs.a;
+        let b = self.regs.b as u16;
+        let c = self.regs.c as u16;
+        self.mmu.write_byte(b<<8 | c, a);
+        self.clock.tick(2);
+    }
+
+/// LD   (DE),A      12         8 ----
+/// Load location DE with the contents of A
+    fn LDDEA(&mut self) {
+        let a = self.regs.a;
+        let d = self.regs.d as u16;
+        let e = self.regs.e as u16;
+        self.mmu.write_byte(d<<8 | e, a);
+        self.clock.tick(2);
+    }
+
 /*
 OPCODES
 =======
 
 # 8-bit Load Commands
 # ----- ---- --------
-LD   A,(nn)      FA        16 ----
-LD   (BC),A      02         8 ----
-LD   (DE),A      12         8 ----
 LD   (nn),A      EA        16 ----
 LD   A,(FF00+n)  F0 nn     12 ---- read from io-port n (memory FF00+n)
 LD   (FF00+n),A  E0 nn     12 ---- write to io-port n (memory FF00+n)
@@ -416,7 +452,7 @@ POP  rr          x1        12 (AF) rr=(SP)  SP=SP+2   (rr may be BC,DE,HL,AF)
 /// Add the immediate value to A
     fn ADDn(&mut self) {
         let a = self.regs.a;
-        let n = self.read_immediate_value();
+        let n = self.read_immediate_byte();
         self.regs.a = self.add8(a, n);
         self.clock.tick(2);
     }
@@ -449,7 +485,7 @@ POP  rr          x1        12 (AF) rr=(SP)  SP=SP+2   (rr may be BC,DE,HL,AF)
     fn ADCn(&mut self) {
 
         let a = self.regs.a;
-        let n = self.read_immediate_value();
+        let n = self.read_immediate_byte();
         self.regs.a = self.add8(a, n);
         if self.flag_is_set(CARRY) {
             self.regs.a += 1;
@@ -457,11 +493,25 @@ POP  rr          x1        12 (AF) rr=(SP)  SP=SP+2   (rr may be BC,DE,HL,AF)
         self.clock.tick(2);
     }
 
+/// ADC  A,(HL)      8E         8 z0hc A=A+(HL)+cy
+/// Add the contents of location HL to register a. If the carry bit is set,
+/// add 1 to the result.
+    fn ADCHL(&mut self) {
+
+        let a = self.regs.a;
+        let hl = self.read_hl();
+        self.regs.a = self.add8(a, hl);
+        if self.flag_is_set(CARRY) {
+            self.regs.a += 1;
+        }
+        self.clock.tick(2);
+    }
+
+
 /*
 
 # 8-bit Arithmetic Commands
 # ----- ---------- --------
-ADC  A,(HL)      8E         8 z0hc A=A+(HL)+cy
 SUB  r           9x         4 z1hc A=A-r
 SUB  n           D6 nn      8 z1hc A=A-n
 SUB  (HL)        96         8 z1hc A=A-(HL)
@@ -973,6 +1023,43 @@ fn test_the_instruction_set_can_LDADE() {
     assert_eq!(cpu.clock.t, 8);
 }
 
+#[test]
+fn test_the_instruction_set_can_LDAnn() {
+    let mut cpu = Z80::new();
+    cpu.regs.a = 0x01; // prime a with 1, so the failing case is more obvious
+    cpu.regs.pc = 0xC000;
+    cpu.mmu.write_byte(0xC000, 0x05);
+    cpu.mmu.write_byte(0xC001, 0xC0);
+    cpu.mmu.write_byte(0xC005, 0x02);
+    cpu.LDAnn();
+    assert_eq!(cpu.regs.a, 0x02);
+    assert_eq!(cpu.clock.t, 16);
+}
+
+#[test]
+fn test_the_instruction_set_can_LDBCA() {
+    let mut cpu = Z80::new();
+    cpu.regs.b = 0xC0;
+    cpu.regs.c = 0x05;
+    cpu.regs.a = 0x01;
+    cpu.mmu.write_byte(0xC005, 0x02);
+    cpu.LDBCA();
+    assert_eq!(cpu.mmu.read(0xC005), 0x01);
+    assert_eq!(cpu.clock.t, 8);
+}
+
+#[test]
+fn test_the_instruction_set_can_LDDEA() {
+    let mut cpu = Z80::new();
+    cpu.regs.d = 0xC0;
+    cpu.regs.e = 0x05;
+    cpu.regs.a = 0x01;
+    cpu.mmu.write_byte(0xC005, 0x02);
+    cpu.LDDEA();
+    assert_eq!(cpu.mmu.read(0xC005), 0x01);
+    assert_eq!(cpu.clock.t, 8);
+}
+
 
 #[test]
 fn test_the_instruction_set_can_ADDr() {
@@ -1029,6 +1116,19 @@ fn test_the_instruction_set_can_ADCn() {
     cpu.regs.pc = 0xC000;
     cpu.mmu.write_byte(0xC000, 0xC8);
     cpu.ADCn();
+    assert!(cpu.flag_is_set(CARRY));
+    assert_eq!(cpu.regs.a, 0x2D);
+    assert_eq!(cpu.clock.t, 8);
+}
+
+#[test]
+fn test_the_instruction_set_can_ADCHL() {
+    let mut cpu = Z80::new();
+    cpu.regs.a = 0x64;
+    cpu.regs.h = 0xC0;
+    cpu.regs.l = 0x01;
+    cpu.mmu.write_byte(0xC001, 0xC8);
+    cpu.ADCHL();
     assert!(cpu.flag_is_set(CARRY));
     assert_eq!(cpu.regs.a, 0x2D);
     assert_eq!(cpu.clock.t, 8);
