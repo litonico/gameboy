@@ -337,27 +337,27 @@ impl Z80 {
 
 /// LD   r,(HL)      xx         8 ---- r=(HL)
 /// Load a register r with the memory at location given by the HL registers
-    fn LDrHL_a(&mut self) { LDrHL!(self,a); }
-    fn LDrHL_b(&mut self) { LDrHL!(self,b); }
-    fn LDrHL_c(&mut self) { LDrHL!(self,c); }
-    fn LDrHL_d(&mut self) { LDrHL!(self,d); }
-    fn LDrHL_e(&mut self) { LDrHL!(self,e); }
-    fn LDrHL_h(&mut self) { LDrHL!(self,h); }
-    fn LDrHL_l(&mut self) { LDrHL!(self,l); }
+    fn LDrHLm_a(&mut self) { LDrHL!(self,a); }
+    fn LDrHLm_b(&mut self) { LDrHL!(self,b); }
+    fn LDrHLm_c(&mut self) { LDrHL!(self,c); }
+    fn LDrHLm_d(&mut self) { LDrHL!(self,d); }
+    fn LDrHLm_e(&mut self) { LDrHL!(self,e); }
+    fn LDrHLm_h(&mut self) { LDrHL!(self,h); }
+    fn LDrHLm_l(&mut self) { LDrHL!(self,l); }
 
 /// LD   (HL),r      7x         8 ---- (HL)=r
 /// Load the location given by registers HL with contents of register r
-    fn LDHLr_a(&mut self) { LDHLr!(self,a); }
-    fn LDHLr_b(&mut self) { LDHLr!(self,b); }
-    fn LDHLr_c(&mut self) { LDHLr!(self,c); }
-    fn LDHLr_d(&mut self) { LDHLr!(self,d); }
-    fn LDHLr_e(&mut self) { LDHLr!(self,e); }
-    fn LDHLr_h(&mut self) { LDHLr!(self,h); }
-    fn LDHLr_l(&mut self) { LDHLr!(self,l); }
+    fn LDHLmr_a(&mut self) { LDHLr!(self,a); }
+    fn LDHLmr_b(&mut self) { LDHLr!(self,b); }
+    fn LDHLmr_c(&mut self) { LDHLr!(self,c); }
+    fn LDHLmr_d(&mut self) { LDHLr!(self,d); }
+    fn LDHLmr_e(&mut self) { LDHLr!(self,e); }
+    fn LDHLmr_h(&mut self) { LDHLr!(self,h); }
+    fn LDHLmr_l(&mut self) { LDHLr!(self,l); }
 
 /// LD   (HL),n      36 nn     12 ----
 /// Load the immediate value n into the location given by HL
-    fn LDHLn(&mut self) {
+    fn LDHLmn(&mut self) {
         let n = self.read_immediate_byte();
         self.write_hl(n);
         self.clock.tick(3);
@@ -365,7 +365,7 @@ impl Z80 {
 
 /// LD   A,(BC)      0A         8 ----
 /// Load register a with the value at location BC
-    fn LDABC(&mut self) {
+    fn LDABCm(&mut self) {
         let b = self.regs.b as u16;
         let c = self.regs.c as u16;
         let bc_value = self.mmu.read(b<<8 | c);
@@ -375,7 +375,7 @@ impl Z80 {
 
 /// LD   A,(DE)      1A         8 ----
 /// Load register a with the value at location DE
-    fn LDADE(&mut self) {
+    fn LDADEm(&mut self) {
         let d = self.regs.d as u16;
         let e = self.regs.e as u16;
         let de_value = self.mmu.read(d<<8 | e);
@@ -395,7 +395,7 @@ impl Z80 {
 
 /// LD   (BC),A      02         8 ----
 /// Load location BC with the contents of A
-    fn LDBCA(&mut self) {
+    fn LDBCmA(&mut self) {
         let a = self.regs.a;
         let b = self.regs.b as u16;
         let c = self.regs.c as u16;
@@ -405,7 +405,7 @@ impl Z80 {
 
 /// LD   (DE),A      12         8 ----
 /// Load location DE with the contents of A
-    fn LDDEA(&mut self) {
+    fn LDDEmA(&mut self) {
         let a = self.regs.a;
         let d = self.regs.d as u16;
         let e = self.regs.e as u16;
@@ -413,13 +413,15 @@ impl Z80 {
         self.clock.tick(2);
     }
 
+/// LD   (nn),A      EA        16 ----
+/// Load location nn with the contents of register a
+
 /*
 OPCODES
 =======
 
 # 8-bit Load Commands
 # ----- ---- --------
-LD   (nn),A      EA        16 ----
 LD   A,(FF00+n)  F0 nn     12 ---- read from io-port n (memory FF00+n)
 LD   (FF00+n),A  E0 nn     12 ---- write to io-port n (memory FF00+n)
 LD   A,(FF00+C)  F2         8 ---- read from io-port C (memory FF00+C)
@@ -617,7 +619,7 @@ RST  n         xx          16 ---- call to 00,08,10,18,20,28,30,38
             0x05 => self.DECr_b(),
             0x06 => self.LDrn_b(),
             0x07 => self.RLCA(),
-            0x08 => self.LDmmSP(),
+            0x08 => self.LDnmSP(),
             0x09 => self.ADDHLBC(),
             0x0A => self.LDABCm(),
             0x0B => self.DECBC(),
@@ -857,7 +859,7 @@ RST  n         xx          16 ---- call to 00,08,10,18,20,28,30,38
             0xE7 => self.RST20(),
             0xE8 => self.ADDSPn(),
             0xE9 => self.JPHL(),
-            0xEA => self.LDmmA(),
+            0xEA => self.LDnmA(),
             0xEB => self.XX(),
             0xEC => self.XX(),
             0xED => self.XX(),
@@ -874,7 +876,7 @@ RST  n         xx          16 ---- call to 00,08,10,18,20,28,30,38
             0xF7 => self.RST30(),
             0xF8 => self.LDHLSPn(),
             0xF9 => self.XX(),
-            0xFA => self.LDAmm(),
+            0xFA => self.LDAnm(),
             0xFB => self.EI(),
             0xFC => self.XX(),
             0xFD => self.XX(),
@@ -964,61 +966,61 @@ fn test_the_instruction_set_can_LDrn() {
 }
 
 #[test]
-fn test_the_instruction_set_can_LDrHL() {
+fn test_the_instruction_set_can_LDrHLm() {
     let mut cpu = Z80::new();
     cpu.regs.a = 0x01;
     cpu.regs.h = 0xC0;
     cpu.regs.l = 0x01;
     cpu.mmu.write_byte(0xC001, 0x05);
-    cpu.LDrHL_a();
+    cpu.LDrHLm_a();
     assert_eq!(cpu.regs.a, 0x05);
     assert_eq!(cpu.clock.t, 8);
 }
 
 #[test]
-fn test_the_instruction_set_can_LDHLr() {
+fn test_the_instruction_set_can_LDHLmr() {
     let mut cpu = Z80::new();
     cpu.regs.a = 0x01;
     cpu.regs.h = 0xC0;
     cpu.regs.l = 0x01;
-    cpu.LDHLr_a();
+    cpu.LDHLmr_a();
     assert_eq!(cpu.mmu.read(0xC001), 0x01);
     assert_eq!(cpu.clock.t, 8);
 }
 
 #[test]
-fn test_the_instruction_set_can_LDHLn() {
+fn test_the_instruction_set_can_LDHLmn() {
     let mut cpu = Z80::new();
     cpu.regs.h = 0xC0;
     cpu.regs.l = 0x05;
     cpu.regs.pc = 0xC000;
     cpu.mmu.write_byte(0xC000, 0x01);
     cpu.mmu.write_byte(0xC005, 0x02);
-    cpu.LDHLn();
+    cpu.LDHLmn();
     assert_eq!(cpu.mmu.read(0xC005), 0x01);
     assert_eq!(cpu.clock.t, 12);
 }
 
 #[test]
-fn test_the_instruction_set_can_LDABC() {
+fn test_the_instruction_set_can_LDABCm() {
     let mut cpu = Z80::new();
     cpu.regs.b = 0xC0;
     cpu.regs.c = 0x05;
     cpu.regs.a = 0x01;
     cpu.mmu.write_byte(0xC005, 0x02);
-    cpu.LDABC();
+    cpu.LDABCm();
     assert_eq!(cpu.regs.a, 0x02);
     assert_eq!(cpu.clock.t, 8);
 }
 
 #[test]
-fn test_the_instruction_set_can_LDADE() {
+fn test_the_instruction_set_can_LDADEm() {
     let mut cpu = Z80::new();
     cpu.regs.d = 0xC0;
     cpu.regs.e = 0x05;
     cpu.regs.a = 0x01;
     cpu.mmu.write_byte(0xC005, 0x02);
-    cpu.LDADE();
+    cpu.LDADEm();
     assert_eq!(cpu.regs.a, 0x02);
     assert_eq!(cpu.clock.t, 8);
 }
@@ -1037,28 +1039,42 @@ fn test_the_instruction_set_can_LDAnn() {
 }
 
 #[test]
-fn test_the_instruction_set_can_LDBCA() {
+fn test_the_instruction_set_can_LDBCmA() {
     let mut cpu = Z80::new();
     cpu.regs.b = 0xC0;
     cpu.regs.c = 0x05;
     cpu.regs.a = 0x01;
     cpu.mmu.write_byte(0xC005, 0x02);
-    cpu.LDBCA();
+    cpu.LDBCmA();
     assert_eq!(cpu.mmu.read(0xC005), 0x01);
     assert_eq!(cpu.clock.t, 8);
 }
 
 #[test]
-fn test_the_instruction_set_can_LDDEA() {
+fn test_the_instruction_set_can_LDDEmA() {
     let mut cpu = Z80::new();
     cpu.regs.d = 0xC0;
     cpu.regs.e = 0x05;
     cpu.regs.a = 0x01;
     cpu.mmu.write_byte(0xC005, 0x02);
-    cpu.LDDEA();
+    cpu.LDDEmA();
     assert_eq!(cpu.mmu.read(0xC005), 0x01);
     assert_eq!(cpu.clock.t, 8);
 }
+
+#[test]
+fn test_the_instruction_set_can_LDnn_A() {
+    let mut cpu = Z80::new();
+    cpu.regs.a = 0x01; // prime a with 1, so the failing case is more obvious
+    cpu.regs.pc = 0xC000;
+    cpu.mmu.write_byte(0xC000, 0x05);
+    cpu.mmu.write_byte(0xC001, 0xC0);
+    cpu.mmu.write_byte(0xC005, 0x02);
+    cpu.LDnm_A();
+    assert_eq!(cpu.regs.a, 0x02);
+    assert_eq!(cpu.clock.t, 16);
+}
+
 
 
 #[test]
@@ -1133,7 +1149,6 @@ fn test_the_instruction_set_can_ADCHL() {
     assert_eq!(cpu.regs.a, 0x2D);
     assert_eq!(cpu.clock.t, 8);
 }
-
 
 #[test]
 fn test_the_instruction_set_can_CCF() {
