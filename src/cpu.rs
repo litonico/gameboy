@@ -247,6 +247,16 @@ impl Z80 {
         sum
     }
 
+    fn inc16(&mut self, n:u16) -> u16 {
+        let overflowing_sum : u32 = n as u32 + 1;
+        self.clear_flags();
+        if overflowing_sum == 0 { self.set_flag(ZERO) }
+        // NOTE(Lito): The manual says to NOT set the carry flag when INC
+        // overflows. That doesn't sound right, but let's leave it for now
+        let sum = overflowing_sum as u16;
+        sum
+    }
+
     // Z-80 CPU Instruction Set
     // ---- --- ----------- ---
 
@@ -370,6 +380,7 @@ impl Z80 {
     fn LDHLmn(&mut self) {
         let n = self.read_immediate_byte();
         self.write_hl(n);
+
         self.clock.tick(3);
     }
 
@@ -379,6 +390,7 @@ impl Z80 {
         let bc = self.regs.bc();
         let bc_value = self.mmu.read(bc);
         self.regs.a = bc_value;
+
         self.clock.tick(2);
     }
 
@@ -388,6 +400,7 @@ impl Z80 {
         let de = self.regs.de();
         let de_value = self.mmu.read(de);
         self.regs.a = de_value;
+
         self.clock.tick(2);
     }
 
@@ -416,6 +429,7 @@ impl Z80 {
         let a = self.regs.a;
         let de = self.regs.de();
         self.mmu.write_byte(de, a);
+
         self.clock.tick(2);
     }
 
@@ -425,15 +439,34 @@ impl Z80 {
         let nn = self.read_immediate_word();
         let a = self.regs.a;
         self.mmu.write_byte(nn, a);
+
         self.clock.tick(4);
     }
 
 /// LDI  (HL),A      22         8 ---- (HL)=A, HL=HL+1
 /// Load location HL with contents of register a, then increment HL
     fn LDIHLmA(&mut self) {
-        let hl = self.read_hl();
         let a = self.regs.a;
-        // TODO(Lito): Increment pair fn
+        self.write_hl(a);
+
+        let hl = self.regs.hl();
+        let hli = self.inc16(hl);
+        self.regs.set_hl(hli);
+
+        self.clock.tick(2);
+    }
+
+/// LDI  A,(HL)      2A         8 ---- A=(HL), HL=HL+1
+/// Load register a with contents of location HL, then increment HL
+    fn LDIAHLm(&mut self) {
+        let hl_value = self.read_hl();
+        self.regs.a = hl_value;
+
+        let hl = self.regs.hl();
+        let hli = self.inc16(hl);
+        self.regs.set_hl(hli);
+
+        self.clock.tick(2);
     }
 
 /*
@@ -446,7 +479,6 @@ LD   A,(FF00+n)  F0 nn     12 ---- read from io-port n (memory FF00+n)
 LD   (FF00+n),A  E0 nn     12 ---- write to io-port n (memory FF00+n)
 LD   A,(FF00+C)  F2         8 ---- read from io-port C (memory FF00+C)
 LD   (FF00+C),A  E2         8 ---- write to io-port C (memory FF00+C)
-LDI  A,(HL)      2A         8 ---- A=(HL), HL=HL+1
 LDD  (HL),A      32         8 ---- (HL)=A, HL=HL-1
 LDD  A,(HL)      3A         8 ---- A=(HL), HL=HL-1
 */
@@ -939,6 +971,19 @@ fn test_the_clock_moves_forward_in_time() {
     assert_eq!(cpu.clock.t, 4+16);
 }
 
+
+#[test]
+fn test_incrementing_16_bit_numbers() {
+    let mut cpu = Z80::new();
+    // Boring case - inc l
+    let i = cpu.inc16(0x0);
+    assert_eq!(i, 0x1);
+    // Overflow
+    let almost_overflowing = 0xFFFF;
+    let overflowing = cpu.inc16(almost_overflowing);
+    assert_eq!(i, 0x1);
+}
+
 #[test]
 fn test_setting_CPU_flags() {
     let mut cpu = Z80::new();
@@ -1119,7 +1164,6 @@ fn test_the_instruction_set_can_LDnmA() {
     assert_eq!(cpu.clock.t, 16);
 }
 
-
 #[test]
 fn test_the_instruction_set_can_LDIHLmA() {
     let mut cpu = Z80::new();
@@ -1128,10 +1172,24 @@ fn test_the_instruction_set_can_LDIHLmA() {
     cpu.regs.l = 0x01;
     cpu.mmu.write_byte(0xC001, 0x05);
     cpu.LDIHLmA();
+    assert_eq!(cpu.mmu.read(0xC001), 0x01);
+    assert_eq!(cpu.regs.l, 0x02);
+    assert_eq!(cpu.clock.t, 8);
+}
+
+#[test]
+fn test_the_instruction_set_can_LDIAHLm() {
+    let mut cpu = Z80::new();
+    cpu.regs.a = 0x01;
+    cpu.regs.h = 0xC0;
+    cpu.regs.l = 0x01;
+    cpu.mmu.write_byte(0xC001, 0x05);
+    cpu.LDIAHLm();
     assert_eq!(cpu.regs.a, 0x05);
     assert_eq!(cpu.regs.l, 0x02);
     assert_eq!(cpu.clock.t, 8);
 }
+
 
 // 16-bit loads
 
