@@ -47,6 +47,15 @@ macro_rules! register_pair {
      )
 }
 
+macro_rules! set_register_pair {
+     ($regs:ident, $r1:ident, $r2:ident, $n:ident) => (
+         {
+            $regs.$r1 = ($n >> 8) as u8;
+            $regs.$r2 = $n as u8;
+         }
+     )
+}
+
 impl RegisterSet {
     pub fn new() -> RegisterSet {
         RegisterSet {
@@ -59,10 +68,9 @@ impl RegisterSet {
     pub fn hl(&self) -> u16 { register_pair!(self, h, l) }
     pub fn bc(&self) -> u16 { register_pair!(self, b, c) }
     pub fn de(&self) -> u16 { register_pair!(self, d, e) }
-    pub fn set_hl(&mut self, n:u16) {
-        self.h = (n >> 8) as u8;
-        self.l = n as u8;
-    }
+    pub fn set_hl(&mut self, n:u16) { set_register_pair!(self, h, l, n) }
+    pub fn set_bc(&mut self, n:u16) { set_register_pair!(self, b, c, n) }
+    pub fn set_de(&mut self, n:u16) { set_register_pair!(self, d, e, n) }
 }
 
 struct Clock {
