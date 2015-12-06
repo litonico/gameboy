@@ -36,6 +36,17 @@ struct RegisterSet {
     sp: u16, // `Stack Pointer`: used with PUSH and POP to keep a stack
 }
 
+macro_rules! register_pair {
+     ($regs:ident, $r1:ident, $r2:ident) => (
+         {
+            let r1 = $regs.$r1 as u16;
+            let r2 = $regs.$r2 as u16;
+            let result = r1<<8 | r2;
+            result
+         }
+     )
+}
+
 impl RegisterSet {
     pub fn new() -> RegisterSet {
         RegisterSet {
@@ -44,6 +55,10 @@ impl RegisterSet {
             pc: 0, sp: 0
         }
     }
+
+    pub fn hl(&self) -> u16 { register_pair!(self, h, l) }
+    pub fn bc(&self) -> u16 { register_pair!(self, b, c) }
+    pub fn de(&self) -> u16 { register_pair!(self, d, e) }
 }
 
 struct Clock {
@@ -162,16 +177,12 @@ impl Z80 {
 
     // Utilities
     fn read_hl(&mut self) -> u8 {
-        let ref regs = self.regs;
-        let h = regs.h as u16;
-        let l = regs.l as u16;
-        self.mmu.read(h<<8 | l)
+        let hl = self.regs.hl();
+        self.mmu.read(hl)
     }
 
     fn write_hl(&mut self, b: u8) {
-        let h = self.regs.h as u16;
-        let l = self.regs.l as u16;
-        let hl = h<<8 | l;
+        let hl = self.regs.hl();
         self.mmu.write_byte(hl, b);
     }
 
@@ -207,7 +218,8 @@ impl Z80 {
         self.regs.f = self.regs.f & inverse_flag;
     }
 
-    // Arithmatic Utilities
+    // Arithmetic Utilities
+
     fn add8(&mut self, a:u8, b:u8) -> u8 {
         // Cheat by holding result in a u16
         let overflowing_sum : u16 = a as u16 + b as u16;
@@ -360,9 +372,8 @@ impl Z80 {
 /// LD   A,(BC)      0A         8 ----
 /// Load register a with the value at location BC
     fn LDABCm(&mut self) {
-        let b = self.regs.b as u16;
-        let c = self.regs.c as u16;
-        let bc_value = self.mmu.read(b<<8 | c);
+        let bc = self.regs.bc();
+        let bc_value = self.mmu.read(bc);
         self.regs.a = bc_value;
         self.clock.tick(2);
     }
@@ -370,9 +381,8 @@ impl Z80 {
 /// LD   A,(DE)      1A         8 ----
 /// Load register a with the value at location DE
     fn LDADEm(&mut self) {
-        let d = self.regs.d as u16;
-        let e = self.regs.e as u16;
-        let de_value = self.mmu.read(d<<8 | e);
+        let de = self.regs.de();
+        let de_value = self.mmu.read(de);
         self.regs.a = de_value;
         self.clock.tick(2);
     }
@@ -391,9 +401,8 @@ impl Z80 {
 /// Load location BC with the contents of A
     fn LDBCmA(&mut self) {
         let a = self.regs.a;
-        let b = self.regs.b as u16;
-        let c = self.regs.c as u16;
-        self.mmu.write_byte(b<<8 | c, a);
+        let bc = self.regs.bc();
+        self.mmu.write_byte(bc, a);
         self.clock.tick(2);
     }
 
@@ -401,9 +410,8 @@ impl Z80 {
 /// Load location DE with the contents of A
     fn LDDEmA(&mut self) {
         let a = self.regs.a;
-        let d = self.regs.d as u16;
-        let e = self.regs.e as u16;
-        self.mmu.write_byte(d<<8 | e, a);
+        let de = self.regs.de();
+        self.mmu.write_byte(de, a);
         self.clock.tick(2);
     }
 
@@ -437,7 +445,10 @@ LD   (FF00+C),A  E2         8 ---- write to io-port C (memory FF00+C)
 LDI  A,(HL)      2A         8 ---- A=(HL), HL=HL+1
 LDD  (HL),A      32         8 ---- (HL)=A, HL=HL-1
 LDD  A,(HL)      3A         8 ---- A=(HL), HL=HL-1
+*/
 
+
+/*
 # 16-bit Load Commands
 # ------ ---- --------
 LD   rr,nn       x1 nn nn  12 ---- rr=nn (rr may be BC,DE,HL or SP)
@@ -892,6 +903,18 @@ RST  n         xx          16 ---- call to 00,08,10,18,20,28,30,38
     }
 }
 
+// Register tests
+#[test]
+fn test_register_getting_pairs() {
+    let mut cpu = Z80::new();
+    assert_eq!(cpu.regs.hl(), 0b0);
+    cpu.regs.h = 0b10000000;
+    assert_eq!(cpu.regs.hl(), 0b1000000000000000);
+    cpu.regs.l = 0b10000000;
+    assert_eq!(cpu.regs.hl(), 0b1000000010000000);
+}
+
+// CPU tests
 #[test]
 fn test_the_clock_moves_forward_in_time() {
     let mut cpu = Z80::new();
@@ -943,6 +966,9 @@ fn test_unsetting_flags() {
     cpu.unset_flag(CARRY);
     assert!(!cpu.flag_is_set(CARRY));
 }
+
+// OPCODES:
+// 8-bit loads
 
 // Because a macro is used to generate this code,
 // we hope we can get away with just testing one case.
@@ -1094,6 +1120,7 @@ fn test_the_instruction_set_can_LDIHLmA() {
     assert_eq!(cpu.clock.t, 8);
 }
 
+// 16-bit loads
 
 #[test]
 fn test_the_instruction_set_can_ADDr() {
