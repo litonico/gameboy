@@ -407,8 +407,22 @@ impl Z80 {
         self.clock.tick(2);
     }
 
-/// LD   (nn),A      EA        16 ----
-/// Load location nn with the contents of register a
+/// LD   (nn),A      EA nn nn  16 ----
+/// Load location at immediate word nn with the contents of register a
+    fn LDnmA(&mut self) {
+        let nn = self.read_immediate_word();
+        let a = self.regs.a;
+        self.mmu.write_byte(nn, a);
+        self.clock.tick(4);
+    }
+
+/// LDI  (HL),A      22         8 ---- (HL)=A, HL=HL+1
+/// Load location HL with contents of register a, then increment HL
+    fn LDIHLmA(&mut self) {
+        let hl = self.read_hl();
+        let a = self.regs.a;
+        // TODO(Lito): Increment pair fn
+    }
 
 /*
 OPCODES
@@ -420,7 +434,6 @@ LD   A,(FF00+n)  F0 nn     12 ---- read from io-port n (memory FF00+n)
 LD   (FF00+n),A  E0 nn     12 ---- write to io-port n (memory FF00+n)
 LD   A,(FF00+C)  F2         8 ---- read from io-port C (memory FF00+C)
 LD   (FF00+C),A  E2         8 ---- write to io-port C (memory FF00+C)
-LDI  (HL),A      22         8 ---- (HL)=A, HL=HL+1
 LDI  A,(HL)      2A         8 ---- A=(HL), HL=HL+1
 LDD  (HL),A      32         8 ---- (HL)=A, HL=HL-1
 LDD  A,(HL)      3A         8 ---- A=(HL), HL=HL-1
@@ -500,12 +513,13 @@ POP  rr          x1        12 (AF) rr=(SP)  SP=SP+2   (rr may be BC,DE,HL,AF)
         self.clock.tick(2);
     }
 
+/// SUB  r           9x         4 z1hc A=A-r
+/// Subtract register r from register a
 
 /*
 
 # 8-bit Arithmetic Commands
 # ----- ---------- --------
-SUB  r           9x         4 z1hc A=A-r
 SUB  n           D6 nn      8 z1hc A=A-n
 SUB  (HL)        96         8 z1hc A=A-(HL)
 SBC  A,r         9x         4 z1hc A=A-r-cy
@@ -638,7 +652,7 @@ RST  n         xx          16 ---- call to 00,08,10,18,20,28,30,38
 
             0x20 => self.JRNZn(),
             0x21 => self.LDHLnn(),
-            0x22 => self.LDHLIA(),
+            0x22 => self.LDIHLmA(),
             0x23 => self.INCHL(),
             0x24 => self.INCr_h(),
             0x25 => self.DECr_h(),
@@ -646,7 +660,7 @@ RST  n         xx          16 ---- call to 00,08,10,18,20,28,30,38
             0x27 => self.XX(),
             0x28 => self.JRZn(),
             0x29 => self.ADDHLHL(),
-            0x2A => self.LDAHLI(),
+            0x2A => self.LDIAHLm(),
             0x2B => self.DECHL(),
             0x2C => self.INCr_l(),
             0x2D => self.DECr_l(),
@@ -1054,18 +1068,31 @@ fn test_the_instruction_set_can_LDDEmA() {
 }
 
 #[test]
-fn test_the_instruction_set_can_LDnn_A() {
+fn test_the_instruction_set_can_LDnmA() {
     let mut cpu = Z80::new();
-    cpu.regs.a = 0x01; // prime a with 1, so the failing case is more obvious
+    cpu.regs.a = 0x04;
     cpu.regs.pc = 0xC000;
     cpu.mmu.write_byte(0xC000, 0x05);
     cpu.mmu.write_byte(0xC001, 0xC0);
-    cpu.mmu.write_byte(0xC005, 0x02);
-    cpu.LDnm_A();
-    assert_eq!(cpu.regs.a, 0x02);
+    cpu.mmu.write_byte(0xC005, 0x01);
+    cpu.LDnmA();
+    assert_eq!(cpu.regs.a, 0x04);
     assert_eq!(cpu.clock.t, 16);
 }
 
+
+#[test]
+fn test_the_instruction_set_can_LDIHLmA() {
+    let mut cpu = Z80::new();
+    cpu.regs.a = 0x01;
+    cpu.regs.h = 0xC0;
+    cpu.regs.l = 0x01;
+    cpu.mmu.write_byte(0xC001, 0x05);
+    cpu.LDIHLmA();
+    assert_eq!(cpu.regs.a, 0x05);
+    assert_eq!(cpu.regs.l, 0x02);
+    assert_eq!(cpu.clock.t, 8);
+}
 
 
 #[test]
