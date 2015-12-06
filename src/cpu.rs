@@ -1,4 +1,5 @@
 #![allow(non_snake_case)] // CPU Opcodes have capitalized names
+#![allow(dead_code)] // TODO
 // Wolves and the Ravens - Rogue Valley
 // Holding - Grouper
 // In for the Kill - Billie Marten
@@ -6,8 +7,6 @@
 // Jose Gonzales - Stay in the Shade
 // Lo-Fang
 // Dan Grossman UW CS341
-
-use ::types::{Byte, Word, Address};
 
 const ZERO      : u8 = 0x80;
 const SUBTRACT  : u8 = 0x40;
@@ -40,15 +39,17 @@ struct RegisterSet {
 impl RegisterSet {
     pub fn new() -> RegisterSet {
         RegisterSet {
-            a: 0, f: 0, b: 0, c: 0, d:0, e: 0, h: 0, l: 0,
+            a: 0, b: 0, c: 0, d:0, e: 0, h: 0, l: 0,
+            f: 0,
             pc: 0, sp: 0
         }
     }
 }
 
 struct Clock {
-    m: u32,
-    t: u32,
+    m: u32, // The Gameboy clock has a speed of about 4MHz, so it's easier
+            // for us to note times here as actual time divided by 4.
+    t: u32, // Actual time (always m*4)
 }
 
 impl Clock {
@@ -170,7 +171,7 @@ impl Z80 {
     fn write_hl(&mut self, b: u8) {
         let h = self.regs.h as u16;
         let l = self.regs.l as u16;
-        let hl = (h<<8 | l);
+        let hl = h<<8 | l;
         self.mmu.write_byte(hl, b);
     }
 
@@ -185,7 +186,7 @@ impl Z80 {
         self.regs.pc += 1;
         let large_byte = self.mmu.read(self.regs.pc) as u16;
         self.regs.pc += 1;
-        let nn = (large_byte<<8 | small_byte);
+        let nn = large_byte<<8 | small_byte;
         nn
     }
 
@@ -232,13 +233,6 @@ impl Z80 {
 
     // Z-80 CPU Instruction Set
     // ---- --- ----------- ---
-
-    fn ADCHLss(&mut self) { // Add with carry register pair ss to HL.
-        let A = self.regs.a;
-        let HL = self.read_hl();
-        self.regs.a = self.add8(A, HL);
-        self.clock.tick(1);
-    }
 
     fn CCF(&mut self) { // Complement carry flag.
         if self.flag_is_set(CARRY) {
@@ -441,7 +435,6 @@ POP  rr          x1        12 (AF) rr=(SP)  SP=SP+2   (rr may be BC,DE,HL,AF)
 */
 /// ADD  A,r         8x         4 z0hc A=A+r
 /// Add any register to A and store the result in A
-
     fn ADDr_a(&mut self) { ADDr!(self,a); }
     fn ADDr_b(&mut self) { ADDr!(self,b); }
     fn ADDr_c(&mut self) { ADDr!(self,c); }
@@ -461,7 +454,6 @@ POP  rr          x1        12 (AF) rr=(SP)  SP=SP+2   (rr may be BC,DE,HL,AF)
 
 /// ADD  A,(HL)      86         8 z0hc A=A+(HL)
 /// Add the contents of location HL to register a
-
     fn ADDHL(&mut self) {
         let a = self.regs.a;
         let hl = self.read_hl();
@@ -472,7 +464,6 @@ POP  rr          x1        12 (AF) rr=(SP)  SP=SP+2   (rr may be BC,DE,HL,AF)
 /// ADC  A,r         8x         4 z0hc A=A+r+cy
 /// Add the contents of register r to register a. If the carry bit is set,
 /// add 1 to the result.
-
     fn ADCr_a(&mut self) { ADCr!(self,a); }
     fn ADCr_b(&mut self) { ADCr!(self,b); }
     fn ADCr_c(&mut self) { ADCr!(self,c); }

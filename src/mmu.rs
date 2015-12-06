@@ -55,17 +55,11 @@ impl MMU {
             _ => {println!("Memory access out of bounds"); 0x0}
         }
     }
-    pub fn rw(&mut self, addr: u16) -> u16 { // read 16-bit word
-        //(self.rb(addr) as u16)+ (self.rb(addr+1) as u16 << 8)
-        0x0 // TODO
-    }
 
     pub fn write_byte(&mut self, address: u16, val: u8) { // write 8-bits
         let addr = address as usize;
         self.wram[addr - 0xC000] = val;
     }
-
-    pub fn write_word(&mut self, addr: u16, val: u16) {} // write 16-bits TODO: Dunno types
 
     /*
     pub fn open() {

@@ -1,10 +1,9 @@
 extern crate gb;
 
 fn main() {
-    let mut cpu = gb::cpu::Z80::new();
+    // let mut cpu = gb::cpu::Z80::new();
     /*
     // Construct a CPU
-    let mut CPU = cpu::Z80::new();
 
     loop {
         // Read an instruction from memory
