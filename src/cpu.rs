@@ -59,6 +59,10 @@ impl RegisterSet {
     pub fn hl(&self) -> u16 { register_pair!(self, h, l) }
     pub fn bc(&self) -> u16 { register_pair!(self, b, c) }
     pub fn de(&self) -> u16 { register_pair!(self, d, e) }
+    pub fn set_hl(&mut self, n:u16) {
+        self.h = (n >> 8) as u8;
+        self.l = n as u8;
+    }
 }
 
 struct Clock {
@@ -907,11 +911,20 @@ RST  n         xx          16 ---- call to 00,08,10,18,20,28,30,38
 #[test]
 fn test_register_getting_pairs() {
     let mut cpu = Z80::new();
-    assert_eq!(cpu.regs.hl(), 0b0);
-    cpu.regs.h = 0b10000000;
-    assert_eq!(cpu.regs.hl(), 0b1000000000000000);
-    cpu.regs.l = 0b10000000;
-    assert_eq!(cpu.regs.hl(), 0b1000000010000000);
+    assert_eq!(cpu.regs.hl(), 0x0);
+    cpu.regs.h = 0x80;
+    assert_eq!(cpu.regs.hl(), 0x8000);
+    cpu.regs.l = 0x80;
+    assert_eq!(cpu.regs.hl(), 0x8080);
+}
+
+#[test]
+fn test_register_setting_hl() {
+    let mut cpu = Z80::new();
+    assert_eq!(cpu.regs.hl(), 0x0);
+    cpu.regs.set_hl(0x8811);
+    assert_eq!(cpu.regs.h, 0x88);
+    assert_eq!(cpu.regs.l, 0x11);
 }
 
 // CPU tests
