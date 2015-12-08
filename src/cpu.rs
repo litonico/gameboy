@@ -177,6 +177,19 @@ macro_rules! ADCr {
     )
 }
 
+/// ADD  HL,rr     x9           8 -0hc HL = HL+rr     ;rr may be BC,DE,HL,SP
+/// Add register pair rr to registers HL
+macro_rules! ADDHLrr {
+    ($cpu:ident, $rs:ident) => (
+        {
+            let hl = $cpu.regs.hl();
+            let rs = $cpu.regs.$rs();
+            let result = $cpu.add16(hl, rs);
+            $cpu.regs.set_hl(result);
+            $cpu.clock.tick(2);
+        }
+    )
+}
 
 impl Z80 {
     pub fn new() -> Z80 {
@@ -565,16 +578,63 @@ POP  rr          x1        12 (AF) rr=(SP)  SP=SP+2   (rr may be BC,DE,HL,AF)
         if self.flag_is_set(CARRY) {
             self.regs.a += 1;
         }
+
         self.clock.tick(2);
     }
 
-/// SUB  r           9x         4 z1hc A=A-r
-/// Subtract register r from register a
+
+/// ADD  HL,rr     x9           8 -0hc HL = HL+rr     ;rr may be BC,DE,HL,SP
+/// Add register pair rr to registers HL
+    fn ADDHLBC(&mut self) { ADDHLrr!(self, bc); }
+    fn ADDHLDE(&mut self) { ADDHLrr!(self, de); }
+    fn ADDHLHL(&mut self) { ADDHLrr!(self, hl); }
+    // SP is a single register, not a pair, so the macro can't be used
+    fn ADDHLSP(&mut self){
+        let hl = self.regs.hl();
+        let sp = self.regs.sp;
+        let result = self.add16(hl, sp);
+        self.regs.set_hl(result);
+
+        self.clock.tick(2);
+    }
+
+/// INC  rr        x3           8 ---- rr = rr+1      ;rr may be BC,DE,HL,SP
+/// Increment register pair rr
+    fn INCBC(&mut self) {
+        let bc = self.regs.bc();
+        let result = self.inc16(bc);
+        self.regs.set_bc(result);
+
+        self.clock.tick(2);
+    }
+    fn INCDE(&mut self) {
+        let de = self.regs.de();
+        let result = self.inc16(de);
+        self.regs.set_de(result);
+
+        self.clock.tick(2);
+    }
+    fn INCHL(&mut self) {
+        let hl = self.regs.hl();
+        let result = self.inc16(hl);
+        self.regs.set_hl(result);
+
+        self.clock.tick(2);
+    }
+    fn INCSP(&mut self) {
+        let sp = self.regs.sp;
+        let spi = self.inc16(sp);
+        self.regs.sp = spi;
+
+        self.clock.tick(2);
+    }
 
 /*
 
 # 8-bit Arithmetic Commands
 # ----- ---------- --------
+SUB  r           9x         4 z1hc A=A-r
+/// Subtract register r from register a
 SUB  n           D6 nn      8 z1hc A=A-n
 SUB  (HL)        96         8 z1hc A=A-(HL)
 SBC  A,r         9x         4 z1hc A=A-r-cy
@@ -599,10 +659,9 @@ DEC  (HL)        35        12 z1h- (HL)=(HL)-1
 DAA              27         4 z-0x decimal adjust akku
 CPL              2F         4 -11- A = A xor FF
 
+
 # 16-bit Arithmetic Commands
 # ------ ---------- --------
-ADD  HL,rr     x9           8 -0hc HL = HL+rr     ;rr may be BC,DE,HL,SP
-INC  rr        x3           8 ---- rr = rr+1      ;rr may be BC,DE,HL,SP
 DEC  rr        xB           8 ---- rr = rr-1      ;rr may be BC,DE,HL,SP
 ADD  SP,dd     E8          16 00hc SP = SP +/- dd ;dd is 8bit signed number
 LD   HL,SP+dd  F8          12 00hc HL = SP +/- dd ;dd is 8bit signed number
@@ -989,7 +1048,7 @@ fn test_incrementing_16_bit_numbers() {
     // Overflow
     let almost_overflowing = 0xFFFF;
     let overflowing = cpu.inc16(almost_overflowing);
-    assert_eq!(i, 0x1);
+    assert_eq!(overflowing, 0x0);
 }
 
 #[test]
@@ -1273,6 +1332,50 @@ fn test_the_instruction_set_can_ADCHL() {
     assert_eq!(cpu.regs.a, 0x2D);
     assert_eq!(cpu.clock.t, 8);
 }
+
+// 16-bit arithmetic
+#[test]
+fn test_the_instruction_set_can_ADDHLrr() {
+    let mut cpu = Z80::new();
+    cpu.regs.h = 0x10;
+    cpu.regs.l = 0x01;
+    cpu.regs.b = 0x11;
+    cpu.regs.c = 0x02;
+    cpu.ADDHLBC();
+    assert_eq!(cpu.regs.hl(), 0x2103);
+    assert_eq!(cpu.clock.t, 8);
+}
+
+#[test]
+fn test_the_instruction_set_can_ADDHLSP() { // Non-macro logic, so double-check
+    let mut cpu = Z80::new();
+    cpu.regs.h = 0x10;
+    cpu.regs.l = 0x01;
+    cpu.regs.sp = 0x1102;
+    cpu.ADDHLSP();
+    assert_eq!(cpu.regs.hl(), 0x2103);
+    assert_eq!(cpu.clock.t, 8);
+}
+
+#[test]
+fn test_the_instruction_set_can_INCrr() {
+    let mut cpu = Z80::new();
+    cpu.regs.h = 0x10;
+    cpu.regs.l = 0x01;
+    cpu.INCHL();
+    assert_eq!(cpu.regs.hl(), 0x1002);
+    assert_eq!(cpu.clock.t, 8);
+}
+
+#[test]
+fn test_the_instruction_set_can_INCSP() {
+    let mut cpu = Z80::new();
+    cpu.regs.sp = 0x1102;
+    cpu.INCSP();
+    assert_eq!(cpu.regs.sp, 0x1103);
+    assert_eq!(cpu.clock.t, 8);
+}
+
 
 #[test]
 fn test_the_instruction_set_can_CCF() {
