@@ -57,6 +57,7 @@ impl MMU {
     }
 
     pub fn write_byte(&mut self, address: u16, val: u8) { // write 8-bits
+        //TODO(Lito) Is there more to this??
         let addr = address as usize;
         self.wram[addr - 0xC000] = val;
     }
