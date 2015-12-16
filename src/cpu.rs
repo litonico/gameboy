@@ -770,6 +770,9 @@ RES  n,(HL)    CB xx       16 ---- reset bit n
         fn NOP(&mut self) {
             self.clock.tick(1);
         }
+        fn XX(&mut self) {
+            panic!("Called an unsupported opcode!")
+        }
 
     fn call(&mut self, opcode: u8) {
         /*
@@ -815,7 +818,7 @@ RES  n,(HL)    CB xx       16 ---- reset bit n
            0x24 => self.INCr_h(),
            0x25 => self.DECr_h(),
            0x26 => self.LDrn_h(),
-           0x27 => self.XX(),
+           0x27 => self.DAA(),
            0x28 => self.JRZn(),
            0x29 => self.ADDHLHL(),
            0x2A => self.LDIAHLm(),
@@ -1038,7 +1041,7 @@ RES  n,(HL)    CB xx       16 ---- reset bit n
         0xF6 => self.XORn(),
         0xF7 => self.RST30(),
         0xF8 => self.LDHLSPn(),
-        0xF9 => self.XX(),
+        0xF9 => self.LDSPHL(),
         0xFA => self.LDAnm(),
         0xFB => self.EI(),
         0xFC => self.XX(),
@@ -1471,4 +1474,11 @@ fn test_the_instruction_set_can_CCF() {
     cpu.CCF();
     assert!( !cpu.flag_is_set(CARRY) );
     assert_eq!(cpu.clock.t, 8);
+}
+
+#[test]
+#[should_panic]
+fn test_the_instruction_set_panics_on_unused_opcodes() {
+    let mut cpu = Z80::new();
+    cpu.XX();
 }
