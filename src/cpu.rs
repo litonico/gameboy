@@ -183,7 +183,9 @@ macro_rules! ADCr {
             let r = $cpu.regs.$r;
             $cpu.regs.a = $cpu.add8(a, r);
             if $cpu.flag_is_set(CARRY) {
-                // This will never overflow, so the direct add is ok
+                // This will never overflow (if the carry bit is set,
+                // it means we had an overflow and wrapped back around),
+                // so the direct add is ok
                 $cpu.regs.a += 1;
             }
             $cpu.clock.tick(1);
@@ -264,7 +266,8 @@ impl Z80 {
         let overflowing_sum : u16 = a as u16 + b as u16;
         // Set the appropriate flags
         self.clear_flags();
-        if overflowing_sum == 0 { self.set_flag(ZERO) }
+        if overflowing_sum == 0   { self.set_flag(ZERO) }
+        if overflowing_sum > 0xF  { self.set_flag(HALFCARRY) }
         if overflowing_sum > 0xFF { self.set_flag(CARRY) }
         // Mask result to 8 bits
         let sum = overflowing_sum as u8;
@@ -275,7 +278,8 @@ impl Z80 {
         let overflowing_sum : u32 = a as u32 + b as u32;
         // Set the appropriate flags
         self.clear_flags();
-        if overflowing_sum == 0 { self.set_flag(ZERO) }
+        if overflowing_sum == 0     { self.set_flag(ZERO) }
+        if overflowing_sum > 0xFF   { self.set_flag(HALFCARRY) }
         if overflowing_sum > 0xFFFF { self.set_flag(CARRY) }
         // Mask result to 8 bits
         let sum = overflowing_sum as u16;
@@ -1098,6 +1102,7 @@ fn test_the_alu_adds_8_bit_numbers() {
     let added = cpu.add8(200, 100);
     assert_eq!(added, 44);
     assert!(cpu.flag_is_set(CARRY));
+    assert!(cpu.flag_is_set(HALFCARRY));
 }
 
 #[test]
@@ -1106,6 +1111,7 @@ fn test_the_alu_adds_16_bit_numbers() {
     let added = cpu.add16(65535, 50);
     assert_eq!(added, 49);
     assert!(cpu.flag_is_set(CARRY));
+    assert!(cpu.flag_is_set(HALFCARRY));
 }
 
 #[test]
