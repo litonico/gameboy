@@ -523,6 +523,17 @@ impl Z80 {
         self.clock.tick(3);
     }
 
+    /// LD   SP,HL       F9         8 ---- SP=HL
+    /// Load the stack pointer with the value of the HL registers
+    fn LDSPHL(&mut self) {
+        let hl = self.regs.hl();
+        self.regs.sp = hl;
+
+        self.clock.tick(2);
+    }
+/// PUSH rr          x5        16 ---- SP=SP-2  (SP)=rr   (rr may be BC,DE,HL,AF)
+/// Push a register pair to the stack
+    fn PUSHBC(&mut self) {}
 
     /*
        OPCODES
@@ -542,8 +553,6 @@ LDD  A,(HL)      3A         8 ---- A=(HL), HL=HL-1
     /*
 # 16-bit Load Commands
 # ------ ---- --------
-LD   SP,HL       F9         8 ---- SP=HL
-PUSH rr          x5        16 ---- SP=SP-2  (SP)=rr   (rr may be BC,DE,HL,AF)
 POP  rr          x1        12 (AF) rr=(SP)  SP=SP+2   (rr may be BC,DE,HL,AF)
 
 */
@@ -665,8 +674,7 @@ POP  rr          x1        12 (AF) rr=(SP)  SP=SP+2   (rr may be BC,DE,HL,AF)
         self.clock.tick(2);
     }
 
-    /*
-
+/*
 # 8-bit Arithmetic Commands
 # ----- ---------- --------
 SUB  r           9x         4 z1hc A=A-r
@@ -1313,7 +1321,29 @@ fn test_the_instruction_set_can_LDrr_nn() {
     assert_eq!(cpu.clock.t, 12+12);
 }
 
+#[test]
+fn test_the_instruction_set_can_LDSPHL() {
+    let mut cpu = Z80::new();
+    cpu.regs.sp = 0x03;
+    cpu.regs.h = 0x05;
+    cpu.regs.l = 0x01;
+    cpu.LDSPHL();
+    assert_eq!(cpu.regs.sp, 0x0501);
+    assert_eq!(cpu.clock.t, 8);
+}
 
+#[test]
+fn test_the_instruction_set_can_PUSHrr() {
+    let mut cpu = Z80::new();
+    cpu.regs.sp = 0x03;
+    cpu.regs.h = 0x05;
+    cpu.regs.l = 0x01;
+    cpu.LDSPHL();
+    assert_eq!(cpu.regs.sp, 0x0501);
+    assert_eq!(cpu.clock.t, 8);
+}
+
+// 8-bit adds
 #[test]
 fn test_the_instruction_set_can_ADDr() {
     let mut cpu = Z80::new();
@@ -1431,7 +1461,6 @@ fn test_the_instruction_set_can_INCSP() {
     assert_eq!(cpu.regs.sp, 0x1103);
     assert_eq!(cpu.clock.t, 8);
 }
-
 
 #[test]
 fn test_the_instruction_set_can_CCF() {
