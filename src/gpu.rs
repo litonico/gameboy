@@ -10,4 +10,5 @@ impl GPU {
             oam:  [0; 160],
         }
     }
+    pub fn write_byte(&mut self, address: u16, val: u8) {}
 }

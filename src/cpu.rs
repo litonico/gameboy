@@ -1,12 +1,5 @@
 #![allow(non_snake_case)] // CPU Opcodes have capitalized names
 #![allow(dead_code)] // TODO
-// Wolves and the Ravens - Rogue Valley
-// Holding - Grouper
-// In for the Kill - Billie Marten
-// Sam Brooks
-// Jose Gonzales - Stay in the Shade
-// Lo-Fang
-// Dan Grossman UW CS341
 
 const ZERO      : u8 = 0x80;
 const SUBTRACT  : u8 = 0x40;
@@ -33,7 +26,7 @@ struct RegisterSet {
 
     // 16-bit registers
     pc: u16, // `Program Counter`: keeps track of where the cpu is executing
-    sp: u16, // `Stack Pointer`: used with PUSH and POP to keep a stack
+    sp: u16, // `Stack Pointer`: keeps the location of the top of the stack
 }
 
 macro_rules! register_pair {
@@ -61,7 +54,7 @@ impl RegisterSet {
         RegisterSet {
             a: 0, b: 0, c: 0, d:0, e: 0, h: 0, l: 0,
             f: 0,
-            pc: 0, sp: 0
+            pc: 0x0100, sp: 0xFFFE
         }
     }
 
@@ -151,7 +144,6 @@ macro_rules! LDrr_nn {
     ($cpu:ident, $r1:ident, $r2:ident) => (
         {
             let nn = $cpu.read_immediate_word();
-            //let mut regs = $cpu.regs;
             let regs = &mut $cpu.regs;
             set_register_pair!(regs, $r1, $r2, nn);
 
@@ -257,6 +249,13 @@ impl Z80 {
     fn unset_flag(&mut self, flag: u8) {
         let inverse_flag : u8 = !flag;
         self.regs.f = self.regs.f & inverse_flag;
+    }
+
+    // Stack Utilities
+    fn stack_push(&mut self, word: u16) {
+        // The stack is written from the end of memory toward the beginning
+        self.mmu.write_word(self.regs.sp, word);
+        self.regs.sp -= 2;
     }
 
     // Arithmetic Utilities
@@ -531,9 +530,13 @@ impl Z80 {
 
         self.clock.tick(2);
     }
+
 /// PUSH rr          x5        16 ---- SP=SP-2  (SP)=rr   (rr may be BC,DE,HL,AF)
 /// Push a register pair to the stack
     fn PUSHBC(&mut self) {}
+    fn PUSHDE(&mut self) {}
+    fn PUSHHL(&mut self) {}
+    fn PUSHAF(&mut self) {}
 
     /*
        OPCODES
@@ -1065,6 +1068,18 @@ fn test_register_getting_pairs() {
 }
 
 #[test]
+fn test_registers_initialize_sp_with_default() {
+    let mut cpu = Z80::new();
+    assert_eq!(cpu.regs.sp, 0xFFFE);
+}
+
+#[test]
+fn test_registers_initialize_pc_at_bios() {
+    let mut cpu = Z80::new();
+    assert_eq!(cpu.regs.pc, 0x0100);
+}
+
+#[test]
 fn test_register_setting_hl() {
     let mut cpu = Z80::new();
     assert_eq!(cpu.regs.hl(), 0x0);
@@ -1139,6 +1154,18 @@ fn test_unsetting_flags() {
     cpu.set_flag(CARRY);
     cpu.unset_flag(CARRY);
     assert!(!cpu.flag_is_set(CARRY));
+}
+
+#[test]
+fn test_pushing_to_the_stack() {
+    let mut cpu = Z80::new();
+    cpu.stack_push(0x4455);
+    assert_eq!(cpu.mmu.read_word(0xFFFE), 0x4455);
+    assert_eq!(cpu.regs.sp, 0xFFFE - 2);
+    // Check that the stack pushes *down*
+    cpu.stack_push(0x6677);
+    assert_eq!(cpu.mmu.read_word(0xFFFE - 2), 0x6677);
+    assert_eq!(cpu.regs.sp, 0xFFFE - 4);
 }
 
 // OPCODES:
@@ -1335,16 +1362,16 @@ fn test_the_instruction_set_can_LDSPHL() {
     assert_eq!(cpu.clock.t, 8);
 }
 
-#[test]
-fn test_the_instruction_set_can_PUSHrr() {
-    let mut cpu = Z80::new();
-    cpu.regs.sp = 0x03;
-    cpu.regs.h = 0x05;
-    cpu.regs.l = 0x01;
-    cpu.LDSPHL();
-    assert_eq!(cpu.regs.sp, 0x0501);
-    assert_eq!(cpu.clock.t, 8);
-}
+// #[test]
+// fn test_the_instruction_set_can_PUSHrr() {
+//     let mut cpu = Z80::new();
+//     cpu.regs.sp = 0x03;
+//     cpu.regs.b = 0x05;
+//     cpu.regs.c = 0x01;
+//     cpu.PUSHBC();
+//     assert_eq!(cpu.mmu.pop_stack(), 0x0105);
+//     assert_eq!(cpu.clock.t, 16);
+// }
 
 // 8-bit adds
 #[test]
