@@ -61,6 +61,7 @@ impl RegisterSet {
     pub fn hl(&self) -> u16 { register_pair!(self, h, l) }
     pub fn bc(&self) -> u16 { register_pair!(self, b, c) }
     pub fn de(&self) -> u16 { register_pair!(self, d, e) }
+    pub fn af(&self) -> u16 { register_pair!(self, a, f) }
     pub fn set_hl(&mut self, n:u16) { set_register_pair!(self, h, l, n) }
     pub fn set_bc(&mut self, n:u16) { set_register_pair!(self, b, c, n) }
     pub fn set_de(&mut self, n:u16) { set_register_pair!(self, d, e, n) }
@@ -194,10 +195,25 @@ macro_rules! ADDHLrr {
             let rs = $cpu.regs.$rs();
             let result = $cpu.add16(hl, rs);
             $cpu.regs.set_hl(result);
+
             $cpu.clock.tick(2);
         }
     )
 }
+
+/// PUSH rr          x5        16 ---- SP=SP-2  (SP)=rr   (rr may be BC,DE,HL,AF)
+/// Push a register pair to the stack
+macro_rules! PUSHrr {
+    ($cpu:ident, $rs:ident) => (
+        {
+            let rr = $cpu.regs.$rs();
+            $cpu.stack_push(rr);
+
+            $cpu.clock.tick(4);
+        }
+    )
+}
+
 
 impl Z80 {
     pub fn new() -> Z80 {
@@ -256,6 +272,11 @@ impl Z80 {
         // The stack is written from the end of memory toward the beginning
         self.mmu.write_word(self.regs.sp, word);
         self.regs.sp -= 2;
+    }
+
+    fn stack_pop(&mut self) -> u16 {
+        self.regs.sp += 2;
+        self.mmu.read_word(self.regs.sp)
     }
 
     // Arithmetic Utilities
@@ -531,13 +552,15 @@ impl Z80 {
         self.clock.tick(2);
     }
 
-/// PUSH rr          x5        16 ---- SP=SP-2  (SP)=rr   (rr may be BC,DE,HL,AF)
-/// Push a register pair to the stack
-    fn PUSHBC(&mut self) {}
-    fn PUSHDE(&mut self) {}
-    fn PUSHHL(&mut self) {}
-    fn PUSHAF(&mut self) {}
+    /// PUSH rr          x5        16 ---- SP=SP-2  (SP)=rr   (rr may be BC,DE,HL,AF)
+    /// Push a register pair to the stack
+    fn PUSHBC(&mut self) { PUSHrr!(self, bc) }
+    fn PUSHDE(&mut self) { PUSHrr!(self, de) }
+    fn PUSHHL(&mut self) { PUSHrr!(self, hl) }
+    fn PUSHAF(&mut self) { PUSHrr!(self, af) }
 
+    /// POP  rr          x1        12 (AF) rr=(SP)  SP=SP+2   (rr may be BC,DE,HL,AF)
+    /// Push a word from the stack into a register pair
     /*
        OPCODES
        =======
@@ -556,7 +579,6 @@ LDD  A,(HL)      3A         8 ---- A=(HL), HL=HL-1
     /*
 # 16-bit Load Commands
 # ------ ---- --------
-POP  rr          x1        12 (AF) rr=(SP)  SP=SP+2   (rr may be BC,DE,HL,AF)
 
 */
     /// ADD  A,r         8x         4 z0hc A=A+r
@@ -669,6 +691,7 @@ POP  rr          x1        12 (AF) rr=(SP)  SP=SP+2   (rr may be BC,DE,HL,AF)
 
         self.clock.tick(2);
     }
+
     fn INCSP(&mut self) {
         let sp = self.regs.sp;
         let spi = self.inc16(sp);
@@ -1168,6 +1191,16 @@ fn test_pushing_to_the_stack() {
     assert_eq!(cpu.regs.sp, 0xFFFE - 4);
 }
 
+#[test]
+fn test_popping_the_stack() {
+    let mut cpu = Z80::new();
+    cpu.stack_push(0x4455);
+    assert_eq!(cpu.regs.sp, 0xFFFE - 2);
+    let popped = cpu.stack_pop();
+    assert_eq!(popped, 0x4455);
+    assert_eq!(cpu.regs.sp, 0xFFFE);
+}
+
 // OPCODES:
 // 8-bit loads
 
@@ -1362,16 +1395,15 @@ fn test_the_instruction_set_can_LDSPHL() {
     assert_eq!(cpu.clock.t, 8);
 }
 
-// #[test]
-// fn test_the_instruction_set_can_PUSHrr() {
-//     let mut cpu = Z80::new();
-//     cpu.regs.sp = 0x03;
-//     cpu.regs.b = 0x05;
-//     cpu.regs.c = 0x01;
-//     cpu.PUSHBC();
-//     assert_eq!(cpu.mmu.pop_stack(), 0x0105);
-//     assert_eq!(cpu.clock.t, 16);
-// }
+#[test]
+fn test_the_instruction_set_can_PUSHrr() {
+    let mut cpu = Z80::new();
+    cpu.regs.b = 0x05;
+    cpu.regs.c = 0x01;
+    cpu.PUSHBC();
+    assert_eq!(cpu.stack_pop(), 0x0501);
+    assert_eq!(cpu.clock.t, 16);
+}
 
 // 8-bit adds
 #[test]
