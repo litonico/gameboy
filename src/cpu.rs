@@ -65,6 +65,7 @@ impl RegisterSet {
     pub fn set_hl(&mut self, n:u16) { set_register_pair!(self, h, l, n) }
     pub fn set_bc(&mut self, n:u16) { set_register_pair!(self, b, c, n) }
     pub fn set_de(&mut self, n:u16) { set_register_pair!(self, d, e, n) }
+    pub fn set_af(&mut self, n:u16) { set_register_pair!(self, a, f, n) }
 }
 
 struct Clock {
@@ -213,6 +214,19 @@ macro_rules! PUSHrr {
         }
     )
 }
+
+macro_rules! POPrr {
+    ($cpu:ident, $r1:ident, $r2:ident) => (
+        {
+            let nn = $cpu.stack_pop();
+            let regs = &mut $cpu.regs;
+            set_register_pair!(regs, $r1, $r2, nn);
+
+            $cpu.clock.tick(3);
+        }
+    )
+}
+
 
 
 impl Z80 {
@@ -560,7 +574,11 @@ impl Z80 {
     fn PUSHAF(&mut self) { PUSHrr!(self, af) }
 
     /// POP  rr          x1        12 (AF) rr=(SP)  SP=SP+2   (rr may be BC,DE,HL,AF)
-    /// Push a word from the stack into a register pair
+    /// Pop word from the stack into a register pair
+    fn POPBC(&mut self) { POPrr!(self, b, c) }
+    fn POPDE(&mut self) { POPrr!(self, d, e) }
+    fn POPHL(&mut self) { POPrr!(self, h, l) }
+    fn POPAF(&mut self) { POPrr!(self, a, f) }
     /*
        OPCODES
        =======
@@ -1007,7 +1025,7 @@ RES  n,(HL)    CB xx       16 ---- reset bit n
                 // 0xBF => self.CPr_a(),
 
                 // 0xC0 => self.RETNZ(),
-                // 0xC1 => self.POPBC(),
+                0xC1 => self.POPBC(),
                 // 0xC2 => self.JPNZnn(),
                 // 0xC3 => self.JPnn(),
                 // 0xC4 => self.CALLNZnn(),
@@ -1024,9 +1042,9 @@ RES  n,(HL)    CB xx       16 ---- reset bit n
                 // 0xCF => self.RST08(),
 
                 // 0xD0 => self.RETNC(),
-                // 0xD1 => self.POPDE(),
+                0xD1 => self.POPDE(),
                 // 0xD2 => self.JPNCnn(),
-                // 0xD3 => self.XX(),
+                0xD3 => self.XX(),
                 // 0xD4 => self.CALLNCnn(),
                 0xD5 => self.PUSHDE(),
                 // 0xD6 => self.SUBn(),
@@ -1041,7 +1059,7 @@ RES  n,(HL)    CB xx       16 ---- reset bit n
                 // 0xDF => self.RST18(),
 
                 // 0xE0 => self.LDIOnA(),
-                // 0xE1 => self.POPHL(),
+                0xE1 => self.POPHL(),
                 // 0xE2 => self.LDIOCA(),
                 0xE3 => self.XX(),
                 0xE4 => self.XX(),
@@ -1058,7 +1076,7 @@ RES  n,(HL)    CB xx       16 ---- reset bit n
                 // 0xEF => self.RST28(),
 
                 // 0xF0 => self.LDAIOn(),
-                // 0xF1 => self.POPAF(),
+                0xF1 => self.POPAF(),
                 // 0xF2 => self.LDAIOC(),
                 // 0xF3 => self.DI(),
                 0xF4 => self.XX(),
@@ -1403,6 +1421,18 @@ fn test_the_instruction_set_can_PUSHrr() {
     assert_eq!(cpu.stack_pop(), 0x0501);
     assert_eq!(cpu.clock.t, 16);
 }
+
+#[test]
+fn test_the_instruction_set_can_POPrr() {
+    let mut cpu = Z80::new();
+    cpu.regs.b = 0x05;
+    cpu.regs.c = 0x01;
+    cpu.PUSHBC();
+    cpu.POPHL();
+    assert_eq!(cpu.regs.hl(), 0x0501);
+    assert_eq!(cpu.clock.t, 16+12);
+}
+
 
 // 8-bit adds
 #[test]
