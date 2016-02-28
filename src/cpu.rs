@@ -294,6 +294,45 @@ impl Z80 {
     }
 
     // Arithmetic Utilities
+    fn shift_right(&mut self, a:u8) -> u8 {
+        a >> 1
+    }
+
+    fn rotate_right(&mut self, a:u8) -> u8 {
+        let trailing_digit = a & 0x01;
+        a >> 1 | (trailing_digit << 7)
+    }
+
+    fn rotate_right_carry(&mut self, a:u8) -> u8 {
+        let trailing_digit = a & 0x01;
+        let carry = self.flag_is_set(CARRY);
+        if trailing_digit != 0 {
+            self.set_flag(CARRY)
+        } else {
+            self.unset_flag(CARRY)
+        }
+        a >> 1 | ((carry as u8) << 7)
+    }
+
+    fn shift_left(&mut self, a:u8) -> u8 {
+        a << 1
+    }
+
+    fn rotate_left(&mut self, a:u8) -> u8 {
+        let leading_digit = a & 0x80;
+        a << 1 | (leading_digit >> 7)
+    }
+
+    fn rotate_left_carry(&mut self, a:u8) -> u8 {
+        let leading_digit = a & 0x80;
+        let carry = self.flag_is_set(CARRY);
+        if leading_digit != 0 {
+            self.set_flag(CARRY)
+        } else {
+            self.unset_flag(CARRY)
+        }
+        a << 1 | carry as u8
+    }
 
     fn add8(&mut self, a:u8, b:u8) -> u8 {
         // Cheat by holding result in a u16
@@ -579,6 +618,8 @@ impl Z80 {
     fn POPDE(&mut self) { POPrr!(self, d, e) }
     fn POPHL(&mut self) { POPrr!(self, h, l) }
     fn POPAF(&mut self) { POPrr!(self, a, f) }
+
+
     /*
        OPCODES
        =======
@@ -1160,6 +1201,72 @@ fn test_setting_CPU_flags() {
     assert!(cpu.flag_is_set(CARRY));
     cpu.set_flag(ZERO);
     assert!(cpu.flag_is_set(ZERO));
+}
+
+#[test]
+fn test_the_alu_shifts_right() {
+    let mut cpu = Z80::new();
+    assert_eq!(cpu.shift_right(0b10001001), 0b01000100);
+}
+
+#[test]
+fn test_the_alu_rotates_right() {
+    let mut cpu = Z80::new();
+    assert_eq!(cpu.rotate_right(0b10001000), 0b01000100);
+    assert_eq!(cpu.rotate_right(0b10001001), 0b11000100);
+}
+#[test]
+fn test_the_alu_rotates_right_through_carry() {
+    let mut cpu = Z80::new();
+
+    cpu.set_flag(CARRY);
+    assert_eq!(cpu.rotate_right_carry(0b00010000), 0b10001000);
+    assert!(!cpu.flag_is_set(CARRY));
+
+    cpu.set_flag(CARRY);
+    assert_eq!(cpu.rotate_right_carry(0b00010001), 0b10001000);
+    assert!(cpu.flag_is_set(CARRY));
+
+    cpu.unset_flag(CARRY);
+    assert_eq!(cpu.rotate_right_carry(0b00010001), 0b00001000);
+    assert!(cpu.flag_is_set(CARRY));
+
+    cpu.unset_flag(CARRY);
+    assert_eq!(cpu.rotate_right_carry(0b00010000), 0b00001000);
+    assert!(!cpu.flag_is_set(CARRY));
+}
+
+#[test]
+fn test_the_alu_shifts_left() {
+    let mut cpu = Z80::new();
+    assert_eq!(cpu.shift_left(0b10001000), 0b00010000);
+}
+
+#[test]
+fn test_the_alu_rotates_left() {
+    let mut cpu = Z80::new();
+    assert_eq!(cpu.rotate_left(0b10001000), 0b00010001);
+}
+
+#[test]
+fn test_the_alu_rotates_left_through_carry() {
+    let mut cpu = Z80::new();
+
+    cpu.set_flag(CARRY);
+    assert_eq!(cpu.rotate_left_carry(0b00001000), 0b00010001);
+    assert!(!cpu.flag_is_set(CARRY));
+
+    cpu.set_flag(CARRY);
+    assert_eq!(cpu.rotate_left_carry(0b10001000), 0b00010001);
+    assert!(cpu.flag_is_set(CARRY));
+
+    cpu.unset_flag(CARRY);
+    assert_eq!(cpu.rotate_left_carry(0b10001000), 0b00010000);
+    assert!(cpu.flag_is_set(CARRY));
+
+    cpu.unset_flag(CARRY);
+    assert_eq!(cpu.rotate_left_carry(0b00001000), 0b00010000);
+    assert!(!cpu.flag_is_set(CARRY));
 }
 
 #[test]
