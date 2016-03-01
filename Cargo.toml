@@ -7,4 +7,3 @@ authors = [ "Lito Nicolai <lito.nicolai@gmail.com>"]
 name = "gb"
 
 [dependencies]
-stainless = "0.1.0"
