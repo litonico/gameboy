@@ -227,6 +227,18 @@ macro_rules! POPrr {
     )
 }
 
+/// RLC  r         CB 0x        8 z00c rotate left
+macro_rules! RLCr {
+    ($cpu:ident, $r:ident) => (
+        {
+            let r = $cpu.regs.$r;
+            $cpu.regs.$r = $cpu.rotate_left_carry(r);
+
+            $cpu.clock.tick(2);
+        }
+    )
+}
+
 
 
 impl Z80 {
@@ -795,13 +807,29 @@ DEC  rr        xB           8 ---- rr = rr-1      ;rr may be BC,DE,HL,SP
 ADD  SP,dd     E8          16 00hc SP = SP +/- dd ;dd is 8bit signed number
 LD   HL,SP+dd  F8          12 00hc HL = SP +/- dd ;dd is 8bit signed number
 
+*/
+
+    /// RLCA           07           4 000c rotate akku left
+    fn RLCA(&mut self) {
+        let r = self.regs.a;
+        self.regs.a = self.rotate_left_carry(r);
+
+        self.clock.tick(1);
+    }
+
+    /// RLC  r         CB 0x        8 z00c rotate left
+    fn RLCr_b(&mut self) { RLCr!(self, b) }
+    fn RLCr_c(&mut self) { RLCr!(self, c) }
+    fn RLCr_d(&mut self) { RLCr!(self, d) }
+    fn RLCr_e(&mut self) { RLCr!(self, e) }
+    fn RLCr_f(&mut self) { RLCr!(self, f) }
+
+/*
 # Rotate and Shift Commands
 # ------ --- ----- --------
-RLCA           07           4 000c rotate akku left
 RLA            17           4 000c rotate akku left through carry
 RRCA           0F           4 000c rotate akku right
 RRA            1F           4 000c rotate akku right through carry
-RLC  r         CB 0x        8 z00c rotate left
 RLC  (HL)      CB 06       16 z00c rotate left
 RL   r         CB 1x        8 z00c rotate left through carry
 RL   (HL)      CB 16       16 z00c rotate left through carry
@@ -1657,6 +1685,30 @@ fn test_the_instruction_set_can_INCSP() {
     cpu.regs.sp = 0x1102;
     cpu.INCSP();
     assert_eq!(cpu.regs.sp, 0x1103);
+    assert_eq!(cpu.clock.t, 8);
+}
+
+
+#[test]
+fn test_the_instruction_set_can_RLCA() {
+    let mut cpu = Z80::new();
+    cpu.set_flag(CARRY);
+    cpu.regs.a = 0b00001001;
+    cpu.RLCA();
+    assert_eq!(cpu.regs.a, 0b00010011);
+    assert!(!cpu.flag_is_set(CARRY));
+    assert_eq!(cpu.clock.t, 4);
+}
+
+
+#[test]
+fn test_the_instruction_set_can_RLCr_n() {
+    let mut cpu = Z80::new();
+    cpu.set_flag(CARRY);
+    cpu.regs.b = 0b00001001;
+    cpu.RLCr_b();
+    assert_eq!(cpu.regs.b, 0b00010011);
+    assert!(!cpu.flag_is_set(CARRY));
     assert_eq!(cpu.clock.t, 8);
 }
 
