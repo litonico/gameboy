@@ -247,7 +247,6 @@ macro_rules! RLCr {
     )
 }
 
-/// RLC  r         CB 0x        8 z00c rotate left
 macro_rules! RLr {
     ($cpu:ident, $r:ident) => (
         {
@@ -258,6 +257,37 @@ macro_rules! RLr {
         }
     )
 }
+
+macro_rules! RRCr {
+    ($cpu:ident, $r:ident) => (
+        {
+            let r = $cpu.regs.$r;
+            let trailing_digit = r & 0x01;
+
+            $cpu.regs.$r = $cpu.rotate_right(r);
+
+            if trailing_digit != 0 {
+                $cpu.set_flag(CARRY)
+            } else {
+                $cpu.unset_flag(CARRY)
+            }
+
+            $cpu.clock.tick(2);
+        }
+    )
+}
+
+macro_rules! RRr {
+    ($cpu:ident, $r:ident) => (
+        {
+            let r = $cpu.regs.$r;
+            $cpu.regs.$r = $cpu.rotate_right_carry(r);
+
+            $cpu.clock.tick(2);
+        }
+    )
+}
+
 
 
 
@@ -832,7 +862,7 @@ LD   HL,SP+dd  F8          12 00hc HL = SP +/- dd ;dd is 8bit signed number
 
     /// RLCA           07           4 000c rotate akku left
     /// Rotate register a to the left, and set the carry flag to whatever
-    /// the leftmost digit
+    /// the leftmost digit was
     fn RLCA(&mut self) {
         let r = self.regs.a;
         let leading_digit = r & 0x80;
@@ -857,6 +887,8 @@ LD   HL,SP+dd  F8          12 00hc HL = SP +/- dd ;dd is 8bit signed number
     fn RLCr_f(&mut self) { RLCr!(self, f) }
 
     /// RLA            17           4 000c rotate akku left through carry
+    /// Rotate register a to the left *through* the carry flag, moving the
+    /// leftmost digit to the carry and the carry to the rightmost digit
     fn RLA(&mut self) {
         let r = self.regs.a;
         self.regs.a = self.rotate_left_carry(r);
@@ -865,22 +897,61 @@ LD   HL,SP+dd  F8          12 00hc HL = SP +/- dd ;dd is 8bit signed number
     }
 
     /// RL   r         CB 1x        8 z00c rotate left through carry
+    /// Rotate register r (an extra tick, again) to the left *through* the
+    /// carry flag, moving the leftmost digit to the carry and the carry
+    /// to the rightmost digit
     fn RLr_b(&mut self) { RLr!(self, b) }
     fn RLr_c(&mut self) { RLr!(self, c) }
     fn RLr_d(&mut self) { RLr!(self, d) }
     fn RLr_e(&mut self) { RLr!(self, e) }
     fn RLr_f(&mut self) { RLr!(self, f) }
 
+    /// RRCA           0F           4 000c rotate akku right
+    /// Rotate register a to the right, and set the carry flag to whatever
+    /// the right digit was
+    fn RRCA(&mut self) {
+        let r = self.regs.a;
+        let trailing_digit= r & 0x01;
+        self.regs.a = self.rotate_right(r);
+
+        if trailing_digit != 0 {
+            self.set_flag(CARRY)
+        } else {
+            self.unset_flag(CARRY)
+        }
+
+        self.clock.tick(1);
+    }
+
+    /// RRC  r         CB 0x        8 z00c rotate right
+    fn RRCr_b(&mut self) { RRCr!(self, b) }
+    fn RRCr_c(&mut self) { RRCr!(self, c) }
+    fn RRCr_d(&mut self) { RRCr!(self, d) }
+    fn RRCr_e(&mut self) { RRCr!(self, e) }
+    fn RRCr_f(&mut self) { RRCr!(self, f) }
+
+
+    /// RRA            1F           4 000c rotate akku right through carry
+    fn RRA(&mut self) {
+        let r = self.regs.a;
+        self.regs.a = self.rotate_right_carry(r);
+
+        self.clock.tick(1);
+    }
+
+    /// RR   r         CB 1x        8 z00c rotate right through carry
+    fn RRr_b(&mut self) { RRr!(self, b) }
+    fn RRr_c(&mut self) { RRr!(self, c) }
+    fn RRr_d(&mut self) { RRr!(self, d) }
+    fn RRr_e(&mut self) { RRr!(self, e) }
+    fn RRr_f(&mut self) { RRr!(self, f) }
+
 /*
 # Rotate and Shift Commands
 # ------ --- ----- --------
-RRCA           0F           4 000c rotate akku right
-RRA            1F           4 000c rotate akku right through carry
 RLC  (HL)      CB 06       16 z00c rotate left
 RL   (HL)      CB 16       16 z00c rotate left through carry
-RRC  r         CB 0x        8 z00c rotate right
 RRC  (HL)      CB 0E       16 z00c rotate right
-RR   r         CB 1x        8 z00c rotate right through carry
 RR   (HL)      CB 1E       16 z00c rotate right through carry
 SLA  r         CB 2x        8 z00c shift left arithmetic (b0=0)
 SLA  (HL)      CB 26       16 z00c shift left arithmetic (b0=0)
@@ -1779,6 +1850,55 @@ fn test_the_instruction_set_can_RLr_n() {
     assert!(!cpu.flag_is_set(CARRY));
     assert_eq!(cpu.clock.t, 8);
 }
+
+// Right rotates
+
+#[test]
+fn test_the_instruction_set_can_RRCA() {
+    let mut cpu = Z80::new();
+    cpu.set_flag(CARRY);
+    cpu.regs.a = 0b00010010;
+    cpu.RRCA();
+    assert_eq!(cpu.regs.a, 0b00001001);
+    assert!(!cpu.flag_is_set(CARRY));
+    assert_eq!(cpu.clock.t, 4);
+}
+
+
+#[test]
+fn test_the_instruction_set_can_RRCr_n() {
+    let mut cpu = Z80::new();
+    cpu.set_flag(CARRY);
+    cpu.regs.b = 0b00010010;
+    cpu.RRCr_b();
+    assert_eq!(cpu.regs.b, 0b00001001);
+    assert!(!cpu.flag_is_set(CARRY));
+    assert_eq!(cpu.clock.t, 8);
+}
+
+#[test]
+fn test_the_instruction_set_can_RRA() {
+    let mut cpu = Z80::new();
+    cpu.set_flag(CARRY);
+    cpu.regs.a = 0b00010010;
+    cpu.RRA();
+    assert_eq!(cpu.regs.a, 0b10001001);
+    assert!(!cpu.flag_is_set(CARRY));
+    assert_eq!(cpu.clock.t, 4);
+}
+
+
+#[test]
+fn test_the_instruction_set_can_RRr_n() {
+    let mut cpu = Z80::new();
+    cpu.set_flag(CARRY);
+    cpu.regs.b = 0b00010010;
+    cpu.RRr_b();
+    assert_eq!(cpu.regs.b, 0b10001001);
+    assert!(!cpu.flag_is_set(CARRY));
+    assert_eq!(cpu.clock.t, 8);
+}
+
 
 #[test]
 fn test_the_instruction_set_can_CCF() {
