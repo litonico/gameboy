@@ -232,7 +232,15 @@ macro_rules! RLCr {
     ($cpu:ident, $r:ident) => (
         {
             let r = $cpu.regs.$r;
-            $cpu.regs.$r = $cpu.rotate_left_carry(r);
+            let leading_digit = r & 0x80;
+
+            $cpu.regs.$r = $cpu.rotate_left(r);
+
+            if leading_digit != 0 {
+                $cpu.set_flag(CARRY)
+            } else {
+                $cpu.unset_flag(CARRY)
+            }
 
             $cpu.clock.tick(2);
         }
@@ -810,14 +818,25 @@ LD   HL,SP+dd  F8          12 00hc HL = SP +/- dd ;dd is 8bit signed number
 */
 
     /// RLCA           07           4 000c rotate akku left
+    /// Rotate register a to the left, and set the carry flag to whatever
+    /// the leftmost digit
     fn RLCA(&mut self) {
         let r = self.regs.a;
-        self.regs.a = self.rotate_left_carry(r);
+        let leading_digit = r & 0x80;
+        self.regs.a = self.rotate_left(r);
+
+        if leading_digit != 0 {
+            self.set_flag(CARRY)
+        } else {
+            self.unset_flag(CARRY)
+        }
 
         self.clock.tick(1);
     }
 
     /// RLC  r         CB 0x        8 z00c rotate left
+    /// Rotate register r to the left - which takes an extra tick - and set
+    /// the carry flag to whatever the leftmost digit
     fn RLCr_b(&mut self) { RLCr!(self, b) }
     fn RLCr_c(&mut self) { RLCr!(self, c) }
     fn RLCr_d(&mut self) { RLCr!(self, d) }
@@ -1695,7 +1714,7 @@ fn test_the_instruction_set_can_RLCA() {
     cpu.set_flag(CARRY);
     cpu.regs.a = 0b00001001;
     cpu.RLCA();
-    assert_eq!(cpu.regs.a, 0b00010011);
+    assert_eq!(cpu.regs.a, 0b00010010);
     assert!(!cpu.flag_is_set(CARRY));
     assert_eq!(cpu.clock.t, 4);
 }
@@ -1707,7 +1726,7 @@ fn test_the_instruction_set_can_RLCr_n() {
     cpu.set_flag(CARRY);
     cpu.regs.b = 0b00001001;
     cpu.RLCr_b();
-    assert_eq!(cpu.regs.b, 0b00010011);
+    assert_eq!(cpu.regs.b, 0b00010010);
     assert!(!cpu.flag_is_set(CARRY));
     assert_eq!(cpu.clock.t, 8);
 }
